@@ -1,5 +1,9 @@
 # igasync - C++ Promise library focused on browser WebAssembly
 
+**Current version: 0.1**
+
+> :warning: This project is under development, and not production-hardened
+
 <!-- TOC -->
 - [Overview](#overview)
   - [Motivation](#motivation)
@@ -120,3 +124,9 @@ while (!is_finished) {
 // If main thread synchronization primitives are ever implemented, a more clever
 //  solution will be in order.
 ```
+
+## Thank you!
+
+Open source projects used in this library:
+
+* [moodycamel::ConcurrentQueue](https://github.com/cameron314/concurrentqueue) - thread-safe lock-free queue implementation that powers `igasync::TaskList`
