@@ -158,14 +158,14 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
         auto& task_list = v.DestList;
 
         task_list->add_task(Task::of(
-            [fn = std::move(fn), this, lifetime = shared_from_this()]() {
+            [fn = std::move(fn), this, lifetime = this->shared_from_this()]() {
               resolve_inner(std::move(fn));
             }));
       }
     }
 
     maybe_consume_rsl();
-    return shared_from_this();
+    return this->shared_from_this();
   }
 
   /**
@@ -183,10 +183,10 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
     std::shared_lock l2(m_result_);
     if (result_.has_value()) {
       task_list->add_task(
-          Task::of([fn = std::move(fn), this, l = shared_from_this()]() {
+          Task::of([fn = std::move(fn), this, l = this->shared_from_this()]() {
             fn(*result_);
           }));
-      return shared_from_this();
+      return this->shared_from_this();
     }
 
     // Promise is still pending in this case - add as a callback
@@ -197,7 +197,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
     }
     then_queue_.emplace(std::move(op));
 
-    return shared_from_this();
+    return this->shared_from_this();
   }
 
   /**
@@ -216,8 +216,8 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
 
     std::shared_lock l2(m_result_);
     if (result_.has_value()) {
-      task_list->add_task(
-          Task::of([cb = std::move(cb), this, lifetime = shared_from_this()]() {
+      task_list->add_task(Task::of(
+          [cb = std::move(cb), this, lifetime = this->shared_from_this()]() {
             cb(std::move(*result_));
           }));
       return;
@@ -318,7 +318,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
     if (remaining_thens_ == 0 && consume_.has_value()) {
       MoveOp op = std::move(*consume_);
       op.DestList->add_task(Task::of(
-          [fn = std::move(op.Fn), this, lifetime = shared_from_this()]() {
+          [fn = std::move(op.Fn), this, lifetime = this->shared_from_this()]() {
             fn(std::move(*std::move(result_)));
           }));
       remaining_thens_ = -1;
