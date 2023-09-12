@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <igasync/task_list.h>
 
+#include <type_traits>
+
 using namespace igasync;
 
 namespace {
@@ -19,6 +21,20 @@ class TestTaskScheduledListener : public ITaskScheduledListener {
 
  private:
   std::function<void()> cb_;
+};
+
+class NonCopyable {
+ public:
+  NonCopyable(int val) : val_(val) {}
+  NonCopyable(const NonCopyable&) = delete;
+  NonCopyable& operator=(const NonCopyable&) = delete;
+  NonCopyable(NonCopyable&& o) = default;
+  NonCopyable& operator=(NonCopyable&& o) = default;
+
+  int val() const { return val_; }
+
+ private:
+  int val_;
 };
 
 }  // namespace
@@ -103,4 +119,116 @@ TEST(TaskList, unregisteredListenersDoNotReceiveUpdatesOnSchedule) {
   task_list->schedule(Task::Of(::noop));
 
   EXPECT_EQ(tasks_scheduled, 1);
+}
+
+TEST(TaskList, runReturnsVoidPromise_noParams) {
+  auto task_list = TaskList::Create();
+
+  auto rsl = task_list->run([]() {});
+  bool is_same = std::is_same_v<decltype(rsl), std::shared_ptr<Promise<void>>>;
+
+  EXPECT_FALSE(rsl->is_finished());
+  EXPECT_TRUE(is_same);
+
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_FALSE(task_list->execute_next());
+
+  EXPECT_TRUE(rsl->is_finished());
+}
+
+TEST(TaskList, runReturnsVoidPromise_withParams) {
+  auto task_list = TaskList::Create();
+
+  auto rsl = task_list->run([](int a) {}, 2);
+  bool is_same = std::is_same_v<decltype(rsl), std::shared_ptr<Promise<void>>>;
+
+  EXPECT_FALSE(rsl->is_finished());
+  EXPECT_TRUE(is_same);
+
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_FALSE(task_list->execute_next());
+
+  EXPECT_TRUE(rsl->is_finished());
+}
+
+TEST(TaskList, runReturnsNonVoidPromise_noParams) {
+  auto task_list = TaskList::Create();
+
+  int val = 0;
+
+  auto rsl = task_list->run([]() { return 42; });
+  bool is_same = std::is_same_v<decltype(rsl), std::shared_ptr<Promise<int>>>;
+
+  EXPECT_FALSE(rsl->is_finished());
+  EXPECT_TRUE(is_same);
+
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_FALSE(task_list->execute_next());
+
+  EXPECT_TRUE(rsl->is_finished());
+
+  rsl->on_resolve([&val](const int& v) { val = v; });
+  EXPECT_EQ(val, 42);
+}
+
+TEST(TaskList, runReturnsNonVoidPromise_withParams) {
+  auto task_list = TaskList::Create();
+
+  int val = 0;
+
+  auto rsl = task_list->run([](int a) { return a; }, 50);
+  bool is_same = std::is_same_v<decltype(rsl), std::shared_ptr<Promise<int>>>;
+
+  EXPECT_FALSE(rsl->is_finished());
+  EXPECT_TRUE(is_same);
+
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_FALSE(task_list->execute_next());
+
+  EXPECT_TRUE(rsl->is_finished());
+
+  rsl->on_resolve([&val](const int& v) { val = v; });
+  EXPECT_EQ(val, 50);
+}
+
+TEST(TaskList, runReturnsNonCopyable_noParams) {
+  auto task_list = TaskList::Create();
+
+  int val = 0;
+
+  auto rsl = task_list->run([] { return NonCopyable(42); });
+  bool is_same =
+      std::is_same_v<decltype(rsl), std::shared_ptr<Promise<NonCopyable>>>;
+
+  EXPECT_FALSE(rsl->is_finished());
+  EXPECT_TRUE(is_same);
+
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_FALSE(task_list->execute_next());
+
+  EXPECT_TRUE(rsl->is_finished());
+
+  rsl->on_resolve([&val](const auto& v) { val = v.val(); });
+  EXPECT_EQ(val, 42);
+}
+
+TEST(TaskList, runReturnsNonCopyable_withParams) {
+  auto task_list = TaskList::Create();
+
+  int val = 0;
+
+  auto rsl = task_list->run([](int a) { return NonCopyable(a); }, 50);
+  bool is_same =
+      std::is_same_v<decltype(rsl), std::shared_ptr<Promise<NonCopyable>>>;
+
+  EXPECT_FALSE(rsl->is_finished());
+  EXPECT_TRUE(is_same);
+
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_FALSE(task_list->execute_next());
+
+  EXPECT_TRUE(rsl->is_finished());
+
+  rsl->on_resolve([&val](const auto& v) { val = v.val(); });
+  EXPECT_EQ(val, 50);
 }

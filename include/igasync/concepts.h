@@ -6,6 +6,11 @@
 
 namespace igasync {
 
+template <typename ValT, typename F, typename... Args>
+concept HasAppropriateFunctor = requires(F f, Args... args) {
+  { f.operator()(args...) } -> std::same_as<ValT>;
+};
+
 template <typename ValT>
 concept IsVoid = std::is_void_v<ValT>;
 

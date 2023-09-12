@@ -3,6 +3,7 @@
 
 #include <concurrentqueue.h>
 #include <igasync/execution_context.h>
+#include <igasync/promise.h>
 #include <igasync/task.h>
 
 #include <shared_mutex>
@@ -59,6 +60,24 @@ class TaskList : public ExecutionContext {
    * @param task Task to execute at some point in the future
    */
   virtual void schedule(std::unique_ptr<Task> task) override;
+
+  template <typename F, typename... Args>
+  auto run(F&& f, Args&&... args)
+      -> std::shared_ptr<Promise<std::invoke_result_t<F, Args...>>> {
+    using ValT = std::invoke_result_t<F, Args...>;
+    auto promise = Promise<ValT>::Create();
+
+    if constexpr (std::same_as<ValT, void>) {
+      schedule(Task::Of([promise, f, args...] {
+        f(args...);
+        promise->resolve();
+      }));
+    } else {
+      schedule(
+          Task::Of([promise, f, args...] { promise->resolve(f(args...)); }));
+    }
+    return promise;
+  }
 
   /**
    * @brief Execute the next task in the task queue
