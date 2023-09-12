@@ -50,17 +50,10 @@ FetchContent_MakeAvailable(concurrentqueue)
 # Main igasync library
 #
 set(igasync_headers
-  "include/igasync/promise.h"
-  "include/igasync/promise_combiner.h"
   "include/igasync/task.h"
-  "include/igasync/task_list.h"
-  "include/igasync/thread_pool.h"
 )
 set(igasync_sources
-  "src/promise_combiner.cc"
   "src/task.cc"
-  "src/task_list.cc"
-  "src/thread_pool.cc"
 )
 
 add_library(igasync STATIC ${igasync_headers} ${igasync_sources})
@@ -73,8 +66,7 @@ set_property(TARGET igasync PROPERTY CXX_STANDARD 17)
 #
 if (IGASYNC_BUILD_TESTS)
   set(igasync_test_sources
-    "tests/promise_combiner_test.cc"
-    "tests/promise_test.cc"
+    "tests/task_test.cc"
   )
 
   add_executable(igasync_test ${igasync_test_sources})
@@ -88,5 +80,5 @@ endif ()
 # Examples
 #
 if (IGASYNC_BUILD_EXAMPLES)
-  add_subdirectory(samples)
+  # add_subdirectory(samples)
 endif ()
