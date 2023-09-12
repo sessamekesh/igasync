@@ -50,8 +50,11 @@ FetchContent_MakeAvailable(concurrentqueue)
 # Main igasync library
 #
 set(igasync_headers
+  "include/igasync/concepts.h"
   "include/igasync/execution_context.h"
   "include/igasync/inline_execution_context.h"
+  "include/igasync/promise.h"
+  "include/igasync/promise.inl"
   "include/igasync/task.h"
   "include/igasync/task.inl"
   "include/igasync/task_list.h"
@@ -65,14 +68,16 @@ set(igasync_sources
 add_library(igasync STATIC ${igasync_headers} ${igasync_sources})
 target_include_directories(igasync PUBLIC include)
 target_link_libraries(igasync PUBLIC concurrentqueue)
-set_property(TARGET igasync PROPERTY CXX_STANDARD 17)
+set_property(TARGET igasync PROPERTY CXX_STANDARD 20)
 
 #
 # Tests
 #
 if (IGASYNC_BUILD_TESTS)
   set(igasync_test_sources
+    "tests/concepts_test.cc"
 	"tests/inline_execution_context_test.cc"
+	"tests/promise_test.cc"
     "tests/task_test.cc"
 	"tests/task_list_test.cc"
   )
@@ -80,7 +85,7 @@ if (IGASYNC_BUILD_TESTS)
   add_executable(igasync_test ${igasync_test_sources})
   target_link_libraries(igasync_test gtest gtest_main igasync)
   target_include_directories(igasync_test PRIVATE tests/include)
-  set_property(TARGET igasync_test PROPERTY CXX_STANDARD 17)
+  set_property(TARGET igasync_test PROPERTY CXX_STANDARD 20)
   gtest_discover_tests(igasync_test)
 endif ()
 
