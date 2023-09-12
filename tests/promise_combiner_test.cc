@@ -21,14 +21,12 @@ TEST(PromiseCombiner, basic_combine) {
   int r1 = -1, r2 = -1;
   bool has_resolved = false;
 
-  combiner->combine<EmptyPromiseRsl>([&r1, &r2, &has_resolved, key_1, key_2](
-                                         const PromiseCombiner::Result& rsl) {
+  combiner->combine<void>([&r1, &r2, &has_resolved, key_1,
+                           key_2](const PromiseCombiner::Result& rsl) {
     has_resolved = true;
 
     r1 = rsl.get(key_1);
     r2 = rsl.get(key_2);
-
-    return EmptyPromiseRsl{};
   });
 
   // No execution yet
@@ -78,14 +76,12 @@ TEST(PromiseCombiner, AllowsConsumingMembers) {
   int v2 = -1;
   bool is_finished = false;
 
-  combiner->combine<EmptyPromiseRsl>(
+  combiner->combine<void>(
       [key_1, key_2, &v1, &v2, &is_finished](PromiseCombiner::Result rsl) {
         v1 = rsl.move(key_1);
         v2 = rsl.get(key_2).InnerValue;
 
         is_finished = true;
-
-        return EmptyPromiseRsl{};
       });
 
   p1->resolve(NonCopyableObject(1));
@@ -105,7 +101,7 @@ TEST(PromiseCombiner, DestructsAfterResolving) {
   int dtor_1 = 0, dtor_2 = 0;
   bool has_run = false;
 
-  std::shared_ptr<Promise<EmptyPromiseRsl>> rsl_promise = nullptr;
+  std::shared_ptr<Promise<void>> rsl_promise = nullptr;
 
   {
     auto p1 = Promise<DestructorTracker>::Create();

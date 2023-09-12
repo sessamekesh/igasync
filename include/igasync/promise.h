@@ -1,6 +1,9 @@
 #ifndef IGASYNC_PROMISE_H
 #define IGASYNC_PROMISE_H
 
+#include <igasync/concepts.h>
+
+#include <concepts>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -10,11 +13,6 @@
 #include "task_list.h"
 
 namespace igasync {
-/**
- * Simple type that comes in handy if the promise is only being used as a
- * scheduling mechanism
- */
-struct EmptyPromiseRsl {};
 
 /**
  * Streamlined Promise implementation
@@ -89,7 +87,137 @@ struct EmptyPromiseRsl {};
  *   (b) Move semantics exist that might remove a held value - once invoked, the
  *       promise becomes invalid but the reference still exists.
  */
-template <class ValT>
+
+template <>
+class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
+ private:
+  struct ThenOp {
+    std::function<void()> Fn;
+    std::shared_ptr<TaskList> DestList;
+  };
+
+  Promise() : accepts_thens_(true), remaining_thens_(0u), is_finished_(false) {}
+
+ public:
+  /****************************************************************************
+   *
+   * Core API
+   *
+   ****************************************************************************/
+
+  inline static std::shared_ptr<Promise<void>> Create() {
+    return std::shared_ptr<Promise<void>>(new Promise<void>());
+  }
+
+  inline static std::shared_ptr<Promise<void>> Immediate() {
+    auto p = Create();
+    p->resolve();
+    return p;
+  }
+
+  Promise(const Promise<void>&) = delete;
+  Promise(Promise<void>&&) = delete;
+  Promise<void>& operator=(const Promise<void>&) = delete;
+  Promise<void>& operator=(Promise<void>&&) = delete;
+  ~Promise<void>() = default;
+
+  /**
+   * Finalize this promise with a successful result - this will immediately
+   * queue up all success callbacks
+   */
+  std::shared_ptr<Promise<void>> resolve() {
+    {
+      std::scoped_lock l(m_result_);
+
+      if (is_finished_) {
+        // TODO (sessamekesh): Error handling here, this promise is already
+        // resolved
+        return nullptr;
+      }
+
+      is_finished_ = true;
+    }
+
+    // Flush queue of pending operations
+    {
+      std::scoped_lock l(m_then_queue_);
+      while (!then_queue_.empty()) {
+        auto v = std::move(then_queue_.front());
+        then_queue_.pop();
+        auto fn = std::move(v.Fn);
+        auto& task_list = v.DestList;
+
+        task_list->add_task(
+            Task::of([fn = std::move(fn), this,
+                      lifetime = this->shared_from_this()]() { fn(); }));
+      }
+    }
+
+    return this->shared_from_this();
+  }
+
+  /**
+   * Invoke callback when this promise resolves
+   */
+  std::shared_ptr<Promise<void>> on_resolve(
+      std::function<void()> fn, std::shared_ptr<TaskList> task_list) {
+    std::lock_guard l(m_then_queue_);
+    if (!accepts_thens_) {
+      // TODO (sessamekesh): Error handling here, this promise is already closed
+      return nullptr;
+    }
+
+    std::shared_lock l2(m_result_);
+    if (!is_finished_) {
+      task_list->add_task(Task::of([fn = std::move(fn), this,
+                                    l = this->shared_from_this()]() { fn(); }));
+      return this->shared_from_this();
+    }
+
+    // Promise is still pending in this case - add as a callback
+    ThenOp op = {std::move(fn), std::move(task_list)};
+    { remaining_thens_++; }
+    then_queue_.emplace(std::move(op));
+
+    return this->shared_from_this();
+  }
+
+  /****************************************************************************
+   *
+   * Chaining API
+   *
+   ****************************************************************************/
+  template <typename FnT, typename OutT = std::invoke_result<FnT>::type>
+  auto then(FnT&& cb, std::shared_ptr<TaskList> task_list)
+      -> std::shared_ptr<Promise<OutT>> {
+    auto tr = Promise<OutT>::Create();
+    on_resolve([tr, cb = std::move(cb)]() { tr->resolve(cb()); }, task_list);
+    return tr;
+  }
+
+  /****************************************************************************
+   *
+   * DANGEROUS API - DO NOT USE THE FOLLOWING METHODS UNLESS YOU KNOW WHAT YOU
+   * ARE DOING
+   *
+   ****************************************************************************/
+  bool unsafe_is_finished() {
+    std::shared_lock l(m_result_);
+    return is_finished_;
+  }
+
+ private:
+  std::shared_mutex m_result_;
+
+  std::mutex m_then_queue_;
+  std::queue<ThenOp> then_queue_;
+
+  std::atomic_bool accepts_thens_;
+  std::atomic_int remaining_thens_;
+  std::atomic_bool is_finished_;
+};
+
+template <typename ValT>
 class Promise : public std::enable_shared_from_this<Promise<ValT>> {
  public:
   using value_type = ValT;
@@ -159,7 +287,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
 
         task_list->add_task(Task::of(
             [fn = std::move(fn), this, lifetime = this->shared_from_this()]() {
-              resolve_inner(std::move(fn));
+              this->resolve_inner(std::move(fn));
             }));
       }
     }
@@ -243,11 +371,26 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   }
 
   template <typename FnT, typename OutT = std::invoke_result<FnT, ValT>::type>
+    requires(!IsVoidFn<FnT, ValT>)
   auto then_consuming(FnT&& cb, std::shared_ptr<TaskList> task_list)
       -> std::shared_ptr<Promise<OutT>> {
     auto tr = Promise<OutT>::Create();
     consume([tr, cb = std::move(cb)](ValT v) { tr->resolve(cb(std::move(v))); },
             task_list);
+    return tr;
+  }
+
+  template <typename FnT>
+    requires(IsVoidFn<FnT, ValT>)
+  auto then_consuming(FnT&& cb, std::shared_ptr<TaskList> task_list)
+      -> std::shared_ptr<Promise<void>> {
+    auto tr = Promise<void>::Create();
+    consume(
+        [tr, cb = std::move(cb)](ValT v) {
+          cb(std::move(v));
+          tr->resolve();
+        },
+        task_list);
     return tr;
   }
 
@@ -339,6 +482,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   std::atomic_int remaining_thens_;
   std::atomic_bool is_finished_;
 };
+
 }  // namespace igasync
 
 #endif

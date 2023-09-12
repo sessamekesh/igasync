@@ -303,7 +303,7 @@ class PromiseCombiner : public std::enable_shared_from_this<PromiseCombiner> {
     return key;
   }
 
-  std::shared_ptr<Promise<EmptyPromiseRsl>> combine(
+  std::shared_ptr<Promise<void>> combine(
       std::function<void(Result rsl)> cb,
       std::shared_ptr<TaskList> task_list_override = nullptr);
 
