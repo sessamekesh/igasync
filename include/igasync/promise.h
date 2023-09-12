@@ -45,7 +45,6 @@ inline std::shared_ptr<ExecutionContext> gDefaultExecutionContext =
  * @endcode
  */
 template <class ValT>
-  requires(!std::is_void_v<ValT>)
 class Promise : public std::enable_shared_from_this<Promise<ValT>> {
  public:
   using value_type = ValT;
@@ -100,10 +99,10 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * @return Shared pointer reference to this promise (for chaining)
    */
   template <typename F>
-    requires(NonVoidPromiseThenCb<ValT, F>)
-  std::shared_ptr<Promise<ValT>> on_resolve(
-      F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                 gDefaultExecutionContext);
+  requires(NonVoidPromiseThenCb<ValT, F>)
+      std::shared_ptr<Promise<ValT>> on_resolve(
+          F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                     gDefaultExecutionContext);
 
   /**
    * @brief Schedule a callback to consume the final value when this promise
@@ -116,10 +115,10 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * @return Shared pointer reference to this promise (for chaining)
    */
   template <typename F>
-    requires(NonVoidPromiseConsumeCb<ValT, F>)
-  std::shared_ptr<Promise<ValT>> consume(
-      F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                 gDefaultExecutionContext);
+  requires(NonVoidPromiseConsumeCb<ValT, F>)
+      std::shared_ptr<Promise<ValT>> consume(
+          F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                     gDefaultExecutionContext);
 
   /**
    * @return True if this promise is finished, false otherwise
@@ -140,8 +139,78 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   std::atomic_bool accept_thens_;
 };
 
+/**
+ * @brief Template specialization for void promises.
+ *
+ * The biggest differences are:
+ * 1. Resolve takes no parameters, nor do resolution callbacks
+ * 2. There's not point to specifying consuming functions, since there's no data
+ *    to consume
+ */
+template <>
+class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
+ private:
+  struct ThenOp {
+    std::function<void()> Fn;
+    std::shared_ptr<ExecutionContext> Scheduler;
+  };
+
+  Promise() : is_finished_(false) {}
+
+ public:
+  Promise(const Promise<void>&) = delete;
+  Promise(Promise<void>&&) = delete;
+  Promise<void>& operator=(const Promise<void>&) = delete;
+  Promise<void>& operator=(Promise<void>&&) = delete;
+  ~Promise<void>() = default;
+
+ public:
+  /**
+   * @brief Create a new, unresolved void promise
+   * @return Non-null promise pointer
+   */
+  static std::shared_ptr<Promise<void>> Create();
+
+  /**
+   * @brief Create a new, already resolved void promise
+   * @return Non-null promise pointer
+   */
+  static std::shared_ptr<Promise<void>> Immediate();
+
+  /**
+   * @brief Resolve this void promise, marking it as finished
+   * @return A self-reference Promise pointer (good for chaining)
+   */
+  std::shared_ptr<Promise<void>> resolve();
+
+  /**
+   * @brief Schedule a callback to be invoked when this promise resolves
+   * @tparam F Callback type - must provide no-parameter void function
+   * @param f Callback implementation
+   * @param execution_context Scheduler for callback - defaults to an
+   *                          InlineExecutionContext implementation
+   * @return Shared pointer reference to this promise (for chaining)
+   */
+  template <typename F>
+  requires(VoidPromiseThenCb<F>) std::shared_ptr<Promise<void>> on_resolve(
+      F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                 gDefaultExecutionContext);
+
+  /**
+   * @return True if this promise is finished, false otherwise
+   */
+  bool is_finished();
+
+ private:
+  std::mutex m_then_queue_;
+  std::queue<ThenOp> then_queue_;
+
+  std::atomic_bool is_finished_;
+};
+
 }  // namespace igasync
 
 #include <igasync/promise.inl>
+#include <igasync/void_promise.inl>
 
 #endif

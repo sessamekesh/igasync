@@ -3,13 +3,11 @@
 namespace igasync {
 
 template <class ValT>
-  requires(!std::is_void_v<ValT>)
 std::shared_ptr<Promise<ValT>> Promise<ValT>::Create() {
   return std::shared_ptr<Promise<ValT>>(new Promise<ValT>());
 }
 
 template <class ValT>
-  requires(!std::is_void_v<ValT>)
 std::shared_ptr<Promise<ValT>> Promise<ValT>::Immediate(ValT val) {
   auto p = Create();
   p->resolve(val);
@@ -17,7 +15,6 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::Immediate(ValT val) {
 }
 
 template <class ValT>
-  requires(!std::is_void_v<ValT>)
 std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
   {
     std::scoped_lock l(m_result_);
@@ -37,7 +34,7 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
     std::scoped_lock l(m_then_queue_);
     std::scoped_lock l2(m_consume_);
     while (!then_queue_.empty()) {
-      auto v = std::move(then_queue_.front());
+      ThenOp v = std::move(then_queue_.front());
       then_queue_.pop();
 
       v.Scheduler->schedule(
@@ -57,11 +54,10 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
 }
 
 template <class ValT>
-  requires(!std::is_void_v<ValT>)
 template <class F>
-  requires(NonVoidPromiseThenCb<ValT, F>)
-std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
-    F&& f, std::shared_ptr<ExecutionContext> execution_context) {
+requires(NonVoidPromiseThenCb<ValT, F>)
+    std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
+        F&& f, std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_then_queue_);
   std::lock_guard lcons(m_consume_);
   if (!accept_thens_) {
@@ -84,18 +80,16 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
 }
 
 template <class ValT>
-  requires(!std::is_void_v<ValT>)
 bool Promise<ValT>::is_finished() {
   std::shared_lock l(m_result_);
   return is_finished_;
 }
 
 template <class ValT>
-  requires(!std::is_void_v<ValT>)
 template <typename F>
-  requires(NonVoidPromiseConsumeCb<ValT, F>)
-std::shared_ptr<Promise<ValT>> Promise<ValT>::consume(
-    F&& f, std::shared_ptr<ExecutionContext> execution_context) {
+requires(NonVoidPromiseConsumeCb<ValT, F>)
+    std::shared_ptr<Promise<ValT>> Promise<ValT>::consume(
+        F&& f, std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_then_queue_);
   if (!accept_thens_) {
     // TODO (sessamekesh): Error handling here, this promise is already consume

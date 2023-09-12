@@ -22,6 +22,11 @@ concept HasSingleValueParam = requires(F f, SValT val) {
   { f.operator()(std::move(val)) } -> IsVoid;
 };
 
+template <typename F>
+concept HasNoParamsOperator = requires(F f) {
+  { f.operator()() } -> IsVoid;
+};
+
 template <typename ValT, typename F>
 concept NonVoidPromiseThenCb = requires(F f, ValT val) {
   { f(val) } -> IsVoid;
@@ -33,6 +38,12 @@ concept NonVoidPromiseConsumeCb = requires(F f, ValT val) {
   { f(std::move(val)) } -> IsVoid;
   requires(HasSingleValueParam<ValT, F>);
   requires(std::is_move_constructible_v<ValT>);
+};
+
+template <typename F>
+concept VoidPromiseThenCb = requires(F f) {
+  { f() } -> IsVoid;
+  requires(HasNoParamsOperator<F>);
 };
 
 }  // namespace igasync
