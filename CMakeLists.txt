@@ -50,10 +50,16 @@ FetchContent_MakeAvailable(concurrentqueue)
 # Main igasync library
 #
 set(igasync_headers
+  "include/igasync/execution_context.h"
+  "include/igasync/inline_execution_context.h"
   "include/igasync/task.h"
+  "include/igasync/task.inl"
+  "include/igasync/task_list.h"
 )
 set(igasync_sources
+  "src/inline_execution_context.cc"
   "src/task.cc"
+  "src/task_list.cc"
 )
 
 add_library(igasync STATIC ${igasync_headers} ${igasync_sources})
@@ -66,7 +72,9 @@ set_property(TARGET igasync PROPERTY CXX_STANDARD 17)
 #
 if (IGASYNC_BUILD_TESTS)
   set(igasync_test_sources
+	"tests/inline_execution_context_test.cc"
     "tests/task_test.cc"
+	"tests/task_list_test.cc"
   )
 
   add_executable(igasync_test ${igasync_test_sources})
