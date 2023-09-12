@@ -2,20 +2,13 @@
 #define IGASYNC_TASK_LIST_H
 
 #include <concurrentqueue.h>
-#include <igasync/concepts.h>
-#include <igasync/task_list_base.h>
 
-#include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <type_traits>
 
 #include "task.h"
 
 namespace igasync {
-
-template <class>
-class Promise;
 
 /** Interface for an object that listens for tasks being added to a queue */
 class ITaskScheduledListener {
@@ -26,8 +19,7 @@ class ITaskScheduledListener {
 /**
  * Thread-safe list of tasks that need to be executed with
  */
-class TaskList : public TaskListBase,
-                 public std::enable_shared_from_this<TaskList> {
+class TaskList : std::enable_shared_from_this<TaskList> {
  public:
   struct Desc {
     /**

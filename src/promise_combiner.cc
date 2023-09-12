@@ -20,7 +20,7 @@ PromiseCombiner::PromiseCombiner(Options options)
       is_finished_(false),
       result_(nullptr) {}
 
-std::shared_ptr<Promise<void>> PromiseCombiner::combine(
+std::shared_ptr<Promise<EmptyPromiseRsl>> PromiseCombiner::combine(
     std::function<void(PromiseCombiner::Result rsl)> cb,
     std::shared_ptr<TaskList> task_list_override) {
   {
@@ -64,6 +64,7 @@ std::shared_ptr<Promise<void>> PromiseCombiner::combine(
     return final_promise_->then_consuming(
         [cb](Result rsl) {
           cb(std::move(rsl));
+          return EmptyPromiseRsl{};
         },
         task_list);
   }
