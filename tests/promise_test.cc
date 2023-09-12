@@ -138,3 +138,19 @@ TEST(Promise, doesThensThenConsumes) {
   EXPECT_EQ(peeked_value, 5);
   EXPECT_EQ(consumed_value, 5);
 }
+
+TEST(Promise, unsafeSyncGetWorks) {
+  auto p = Promise<NonCopyable>::Create();
+
+  p->resolve(NonCopyable(5));
+
+  EXPECT_EQ(p->unsafe_sync_peek().val(), 5);
+}
+
+TEST(Promise, unsafeSyncMoveWorks) {
+  auto p = Promise<NonCopyable>::Create();
+
+  p->resolve(NonCopyable(5));
+
+  EXPECT_EQ(p->unsafe_sync_move().val(), 5);
+}

@@ -112,4 +112,14 @@ requires(NonVoidPromiseConsumeCb<ValT, F>)
   return this->shared_from_this();
 }
 
+template <class ValT>
+const ValT& Promise<ValT>::unsafe_sync_peek() {
+  return *result_;
+}
+
+template <class ValT>
+ValT Promise<ValT>::unsafe_sync_move() {
+  return *(std::move(result_));
+}
+
 }  // namespace igasync

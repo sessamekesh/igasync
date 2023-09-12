@@ -125,6 +125,23 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    */
   bool is_finished();
 
+  /**
+   * @brief UNSAFELY peek at the contained promise value
+   *
+   * This should ONLY be called if is_finished() returns true! This
+   * should not be called under normal circumstances!!
+   */
+  const ValT& unsafe_sync_peek();
+
+  /**
+   * @brief UNSAFELY consume the contained promise value
+   *
+   * This should ONLY be called if is_finished() returns true, AND
+   * this promise is known to have no consumers. This should not
+   * be called under normal circumstances!!
+   */
+  ValT unsafe_sync_move();
+
  private:
   std::shared_mutex m_result_;
   std::optional<ValT> result_;

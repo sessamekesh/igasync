@@ -61,6 +61,9 @@ class TaskList : public ExecutionContext {
    */
   virtual void schedule(std::unique_ptr<Task> task) override;
 
+  /**
+   * @brief Schedule a task, and return a promise containing the result
+   */
   template <typename F, typename... Args>
   auto run(F&& f, Args&&... args)
       -> std::shared_ptr<Promise<std::invoke_result_t<F, Args...>>> {
