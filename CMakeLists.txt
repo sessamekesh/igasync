@@ -58,12 +58,14 @@ set(igasync_headers
   "include/igasync/task.h"
   "include/igasync/task.inl"
   "include/igasync/task_list.h"
+  "include/igasync/thread_pool.h"
   "include/igasync/void_promise.inl"
 )
 set(igasync_sources
   "src/inline_execution_context.cc"
   "src/task.cc"
   "src/task_list.cc"
+  "src/thread_pool.cc"
   "src/void_promise.cc"
 )
 
@@ -82,6 +84,7 @@ if (IGASYNC_BUILD_TESTS)
 	"tests/promise_test.cc"
     "tests/task_test.cc"
 	"tests/task_list_test.cc"
+	"tests/thread_pool_test.cc"
 	"tests/void_promise_test.cc"
   )
 
