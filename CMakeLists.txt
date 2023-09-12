@@ -55,6 +55,7 @@ set(igasync_headers
   "include/igasync/promise_combiner.h"
   "include/igasync/task.h"
   "include/igasync/task_list.h"
+  "include/igasync/task_list_base.h"
   "include/igasync/thread_pool.h"
 )
 set(igasync_sources

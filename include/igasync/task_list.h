@@ -3,6 +3,7 @@
 
 #include <concurrentqueue.h>
 #include <igasync/concepts.h>
+#include <igasync/task_list_base.h>
 
 #include <memory>
 #include <mutex>
@@ -16,8 +17,6 @@ namespace igasync {
 template <class>
 class Promise;
 
-struct EmptyPromiseRsl;
-
 /** Interface for an object that listens for tasks being added to a queue */
 class ITaskScheduledListener {
  public:
@@ -27,7 +26,8 @@ class ITaskScheduledListener {
 /**
  * Thread-safe list of tasks that need to be executed with
  */
-class TaskList : std::enable_shared_from_this<TaskList> {
+class TaskList : public TaskListBase,
+                 public std::enable_shared_from_this<TaskList> {
  public:
   struct Desc {
     /**
@@ -53,10 +53,6 @@ class TaskList : std::enable_shared_from_this<TaskList> {
 
   /** Add a task to the queue. To execute a task, call execute_next */
   void add_task(std::unique_ptr<Task> task);
-
-  /** Schedule an operation to run, and return a promise that resolves when it's
-   * finished */
-  // template<class F, class... Args>
 
   /** Execute a task, return true if a task was executed, false otherwise */
   bool execute_next();
