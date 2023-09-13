@@ -96,7 +96,20 @@ if (IGASYNC_BUILD_TESTS)
   target_link_libraries(igasync_test gtest gtest_main igasync)
   target_include_directories(igasync_test PRIVATE tests/include)
   set_property(TARGET igasync_test PROPERTY CXX_STANDARD 20)
-  gtest_discover_tests(igasync_test)
+
+  if (NOT EMSCRIPTEN)
+    gtest_discover_tests(igasync_test)
+  endif ()
+
+  if (EMSCRIPTEN)
+    target_compile_options(igasync PUBLIC "-pthread")
+	target_compile_options(igasync_test PUBLIC "-pthread")
+	target_compile_options(gtest PUBLIC "-pthread")
+	target_link_options(gtest PUBLIC "SHELL: -s ENVIRONMENT=web,worker -sWASM_WORKERS -sUSE_PTHREADS -pthread -s PTHREAD_POOL_SIZE=2")
+	target_link_options(igasync PUBLIC "SHELL: -s ENVIRONMENT=web,worker -sWASM_WORKERS -sUSE_PTHREADS -pthread -s PTHREAD_POOL_SIZE=2")
+	target_link_options(igasync_test PUBLIC "SHELL: -sASYNCIFY -s ENVIRONMENT=web,worker -sUSE_PTHREADS -sWASM_WORKERS -pthread -s PTHREAD_POOL_SIZE=2")
+    set_target_properties(igasync_test PROPERTIES SUFFIX ".html")
+  endif ()
 endif ()
 
 #

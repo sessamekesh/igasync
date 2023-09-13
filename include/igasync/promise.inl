@@ -1,5 +1,7 @@
 #include <igasync/promise.h>
 
+#include <mutex>
+
 namespace igasync {
 
 template <class ValT>

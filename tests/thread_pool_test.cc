@@ -1,6 +1,14 @@
 #include <gtest/gtest.h>
 #include <igasync/thread_pool.h>
 
+#ifdef __EMSCRIPTEN__
+#ifndef __EMSCRIPTEN_PTHREADS__
+#error "Cannot build tests without pthreads support!"
+#endif
+
+#include <emscripten.h>
+#endif
+
 using namespace igasync;
 
 namespace {
@@ -48,7 +56,11 @@ TEST(ThreadPool, consumesTasksFromMultipleTaskLists) {
       Task::Of([&is_executed_other] { is_executed_other = true; }));
 
   for (int i = 0; i < 100; i++) {
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(10);
+#else
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
+#endif
     if (is_executed && is_executed_other) {
       return;
     }
@@ -76,7 +88,11 @@ TEST(ThreadPool, canRemoveTaskList) {
   for (int i = 0; i < 100; i++) {
     is_first_passed = is_executed && is_executed_other;
     if (is_first_passed) break;
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(10);
+#else
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
+#endif
   }
 
   ASSERT_TRUE(is_first_passed);
@@ -87,7 +103,11 @@ TEST(ThreadPool, canRemoveTaskList) {
   other_task_list->schedule(
       Task::Of([&never_do_this] { never_do_this = true; }));
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+#ifdef __EMSCRIPTEN__
+  emscripten_sleep(10);
+#else
+  std::this_thread::sleep_for(std::chrono::milliseconds(2));
+#endif
 
   EXPECT_FALSE(never_do_this);
 }
@@ -104,7 +124,11 @@ TEST(ThreadPool, picksUpExistingTasks) {
   thread_pool->add_task_list(task_list);
 
   for (int i = 0; i < 100; i++) {
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(10);
+#else
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
+#endif
     if (is_executed) {
       return;
     }

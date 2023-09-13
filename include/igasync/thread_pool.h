@@ -23,15 +23,17 @@ class ThreadPool : public std::enable_shared_from_this<ThreadPool>,
    * @brief Descriptor used to initialize a ThreadPool instance
    */
   struct Desc {
+    Desc() noexcept {}
+
     /** Use hardware concurrency to determine the number of threads */
-    bool UseHardwareConcurrency = true;
+    bool UseHardwareConcurrency{true};
 
     /** Additional threads to add to the pool (positive or negative) */
-    int AdditionalThreads;
+    int AdditionalThreads{0};
   };
 
  public:
-  static std::shared_ptr<ThreadPool> Create(Desc desc = Desc());
+  static std::shared_ptr<ThreadPool> Create(Desc desc = Desc{});
   ~ThreadPool();
 
   ThreadPool(const ThreadPool&) = delete;

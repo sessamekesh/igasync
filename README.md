@@ -1,6 +1,12 @@
 # igasync - C++ Promise library focused on browser WebAssembly
 
-**Current version: 0.1**
+**Current version: 0.2**
+
+Changes from version 0.1:
+- Specialization for void promises
+- TaskList can return a promise for a task it invokes
+- Promises consume a scheduler, and by default execute callbacks on the same thread as the resolving (or scheduling) thread
+- Upgraded to C++20, and introduced concept guards and better template type deduction
 
 > :warning: This project is under development, and not production-hardened
 
@@ -9,11 +15,12 @@
   - [Motivation](#motivation)
   - [Concepts](#concepts)
 - [WebAssembly Considerations](#webassembly-considerations)
+- [Samples](#samples)
 - [Thank you!](#thank-you)
 
 ## Overview
 
-igasync is a C++17 library that defines a `Promise` class strongly motivated from the [JavaScript Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise), but designed with C++ applications in mind.
+igasync is a C++20 library that defines a `Promise` class strongly motivated from the [JavaScript Promise](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise), but designed with C++ applications in mind.
 
 Supporting objects TaskList, PromiseCombiner, and ThreadPool are also included.
 
@@ -63,7 +70,7 @@ A common example of using `igasync::Promise`:
 
 ```c++
 shared_ptr<Promise<Geometry>> geometry_promise = async_generate_geo(async_tasks);
-geometry_promise->on_success(
+geometry_promise->on_resolve(
   /* callback= */ [](const Geometry& geo) { set_geometry_data(geo); },
   /* task_list= */ main_thread_tasks);
 ```
@@ -124,6 +131,42 @@ while (!is_finished) {
 // If main thread synchronization primitives are ever implemented, a more clever
 //  solution will be in order.
 ```
+
+## Samples
+
+- [sample-read-file](samples/read-file): Interface with file system API via `std::ifstream` for native builds, and JavaScript `fetch` for web builds
+
+To run samples natively, simply build the appropriate target. Make sure `IGASYNC_BUILD_EXAMPLES` is set.
+
+### Running web targets
+
+I use [emscripten](https://emscripten.org/) to build and run tests and samples. Download and install it there.
+
+To set up a project binary directory with Emscripten, run the following:
+
+```
+mkdir out/web
+cd out/web
+emcmake cmake ../..
+```
+
+To build a sample (or unit tests with target `igasync_test` instead of `sample-read-file`), run the following
+
+```
+emmake make sample-read-file
+```
+
+To run the samples in a web browser though, you'll need to use the `simple_server.js` tool provided in order to
+set the headers required to run multi-threaded code in a web environment.
+
+> :warning: Threads are not guaranteed to be usable in all web browsers - some samples may simply not work because most binaries in this project are built under the assumption that threads are supported.
+
+```
+node ./simple_server.js
+```
+
+Navigate to `https://localhost:8000/` from your binary directory, and from there you can select HTML files, or navigate through
+the output binary directory to find the appropriate samples.
 
 ## Thank you!
 

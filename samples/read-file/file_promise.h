@@ -14,9 +14,10 @@ enum class FileReadError {
 
 class FilePromise {
  public:
-  static std::shared_ptr<
-      Promise<std::variant<std::string, FileReadError>>>
-  Create(const std::string& file_name);
+  using result_t = std::variant<std::string, FileReadError>;
+
+  static std::shared_ptr<Promise<result_t>> Create(
+      const std::string& file_name);
 };
 
 }  // namespace igasync::sample

@@ -153,7 +153,8 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * against, defaults to gDefaultExecutionContext
    * @return A new promise
    */
-  template <typename F, typename RslT = std::invoke_result_t<F, const ValT&>>
+  template <typename F,
+            typename RslT = typename std::invoke_result_t<F, const ValT&>>
     requires(CanApplyFunctor<F, const ValT&>)
   auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
                        gDefaultExecutionContext)
@@ -168,7 +169,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * @param execution_context
    * @return A new promise
    */
-  template <typename F, typename RslT = std::invoke_result_t<F, ValT>>
+  template <typename F, typename RslT = typename std::invoke_result_t<F, ValT>>
     requires(CanApplyFunctor<F, ValT>)
   auto then_consuming(F&& f,
                       std::shared_ptr<ExecutionContext> execution_context =
@@ -188,7 +189,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    *        resolving the promise returned by f
    * @return
    */
-  template <typename F, typename RslT = std::invoke_result_t<
+  template <typename F, typename RslT = typename std::invoke_result_t<
                             F, const ValT&>::element_type::value_type>
     requires(
         HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, const ValT&>)
@@ -209,7 +210,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * @param inner_execution_context_override
    * @return
    */
-  template <typename F, typename RslT = std::invoke_result_t<
+  template <typename F, typename RslT = typename std::invoke_result_t<
                             F, ValT>::element_type::value_type>
     requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, ValT>)
   auto then_chain_consuming(
@@ -303,7 +304,7 @@ class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
    * @param execution_context
    * @return
    */
-  template <typename F, typename RslT = std::invoke_result_t<F>>
+  template <typename F, typename RslT = typename std::invoke_result_t<F>>
     requires(CanApplyFunctor<F>)
   auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
                        gDefaultExecutionContext)
@@ -321,8 +322,8 @@ class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
    *        resolving the promise returned by f
    * @return
    */
-  template <typename F,
-            typename RslT = std::invoke_result_t<F>::element_type::value_type>
+  template <typename F, typename RslT = typename std::invoke_result_t<
+                            F>::element_type::value_type>
     requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F>)
   auto then_chain(F&& f,
                   std::shared_ptr<ExecutionContext> outer_execution_context =

@@ -31,15 +31,17 @@ class TaskList : public ExecutionContext {
    *        reasonable defaults.
    */
   struct Desc {
+    Desc() noexcept {}
+
     /**
      * @brief Hint for the initial size of underlying task store
      */
-    size_t QueueSizeHint = 20;
+    size_t QueueSizeHint{20};
 
     /**
      * @brief Hint for the initial size of task listener store
      */
-    size_t EnqueueListenerSizeHint = 1;
+    size_t EnqueueListenerSizeHint{1};
   };
 
  public:
