@@ -55,9 +55,9 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
 
 template <class ValT>
 template <class F>
-requires(NonVoidPromiseThenCb<ValT, F>)
-    std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
-        F&& f, std::shared_ptr<ExecutionContext> execution_context) {
+  requires(NonVoidPromiseThenCb<ValT, F>)
+std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
+    F&& f, std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_then_queue_);
   std::lock_guard lcons(m_consume_);
   if (!accept_thens_) {
@@ -87,9 +87,9 @@ bool Promise<ValT>::is_finished() {
 
 template <class ValT>
 template <typename F>
-requires(NonVoidPromiseConsumeCb<ValT, F>)
-    std::shared_ptr<Promise<ValT>> Promise<ValT>::consume(
-        F&& f, std::shared_ptr<ExecutionContext> execution_context) {
+  requires(NonVoidPromiseConsumeCb<ValT, F>)
+std::shared_ptr<Promise<ValT>> Promise<ValT>::consume(
+    F&& f, std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_then_queue_);
   if (!accept_thens_) {
     // TODO (sessamekesh): Error handling here, this promise is already consume
@@ -120,6 +120,27 @@ const ValT& Promise<ValT>::unsafe_sync_peek() {
 template <class ValT>
 ValT Promise<ValT>::unsafe_sync_move() {
   return *(std::move(result_));
+}
+
+template <class ValT>
+template <typename F, typename RslT>
+  requires(CanApplyFunctor<F, const ValT&>)
+auto Promise<ValT>::then(F&& f,
+                         std::shared_ptr<ExecutionContext> execution_context)
+    -> std::shared_ptr<Promise<RslT>> {
+  auto tr = Promise<RslT>::Create();
+
+  on_resolve(
+      [tr, f = std::move(f)](const ValT& v) {
+        if constexpr (std::is_void_v<RslT>) {
+          f(v);
+          tr->resolve();
+        } else {
+          tr->resolve(f(v));
+        }
+      },
+      execution_context);
+  return tr;
 }
 
 }  // namespace igasync

@@ -99,10 +99,10 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * @return Shared pointer reference to this promise (for chaining)
    */
   template <typename F>
-  requires(NonVoidPromiseThenCb<ValT, F>)
-      std::shared_ptr<Promise<ValT>> on_resolve(
-          F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                     gDefaultExecutionContext);
+    requires(NonVoidPromiseThenCb<ValT, F>)
+  std::shared_ptr<Promise<ValT>> on_resolve(
+      F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                 gDefaultExecutionContext);
 
   /**
    * @brief Schedule a callback to consume the final value when this promise
@@ -115,10 +115,10 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * @return Shared pointer reference to this promise (for chaining)
    */
   template <typename F>
-  requires(NonVoidPromiseConsumeCb<ValT, F>)
-      std::shared_ptr<Promise<ValT>> consume(
-          F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                     gDefaultExecutionContext);
+    requires(NonVoidPromiseConsumeCb<ValT, F>)
+  std::shared_ptr<Promise<ValT>> consume(
+      F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                 gDefaultExecutionContext);
 
   /**
    * @return True if this promise is finished, false otherwise
@@ -141,6 +141,23 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * be called under normal circumstances!!
    */
   ValT unsafe_sync_move();
+
+  /**
+   * @brief Create a new promise containing the result of a function invoked
+   *        with the value of this promise, once resolved.
+   * @tparam F Functor that consumes a const ValT& argument once this promise
+   *           resolves
+   * @tparam RslT
+   * @param f
+   * @param execution_context Scheduling mechanism to invoke the functor
+   * against, defaults to gDefaultExecutionContext
+   * @return A new promise
+   */
+  template <typename F, typename RslT = std::invoke_result_t<F, const ValT&>>
+    requires(CanApplyFunctor<F, const ValT&>)
+  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                       gDefaultExecutionContext)
+      -> std::shared_ptr<Promise<RslT>>;
 
  private:
   std::shared_mutex m_result_;
@@ -209,9 +226,25 @@ class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
    * @return Shared pointer reference to this promise (for chaining)
    */
   template <typename F>
-  requires(VoidPromiseThenCb<F>) std::shared_ptr<Promise<void>> on_resolve(
+    requires(VoidPromiseThenCb<F>)
+  std::shared_ptr<Promise<void>> on_resolve(
       F&& f, std::shared_ptr<ExecutionContext> execution_context =
                  gDefaultExecutionContext);
+
+  /**
+   * @brief Schedule a callback to be invoked when this promise resolves, and
+   *        return a promise with the result value of that callback
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param execution_context
+   * @return
+   */
+  template <typename F, typename RslT = std::invoke_result_t<F>>
+    requires(CanApplyFunctor<F>)
+  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                       gDefaultExecutionContext)
+      -> std::shared_ptr<Promise<RslT>>;
 
   /**
    * @return True if this promise is finished, false otherwise

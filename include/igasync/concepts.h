@@ -6,9 +6,17 @@
 
 namespace igasync {
 
+template <typename T>
+concept Any = true;
+
 template <typename ValT, typename F, typename... Args>
 concept HasAppropriateFunctor = requires(F f, Args... args) {
   { f.operator()(args...) } -> std::same_as<ValT>;
+};
+
+template <typename F, typename... Args>
+concept CanApplyFunctor = requires(F f, Args... args) {
+  { f.operator()(args...) } -> Any;
 };
 
 template <typename ValT>

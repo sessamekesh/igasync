@@ -154,3 +154,42 @@ TEST(Promise, unsafeSyncMoveWorks) {
 
   EXPECT_EQ(p->unsafe_sync_move().val(), 5);
 }
+
+TEST(Promise, nonVoidThenChainingWorks) {
+  int final_value = 0;
+
+  auto p = Promise<NonCopyable>::Create();
+  auto p2 =
+      p->then([](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); });
+  auto p3 =
+      p2->then([&final_value](const NonCopyable& n) { final_value = n.val(); });
+
+  constexpr bool p2TypeIsExpected =
+      std::same_as<decltype(p2), std::shared_ptr<Promise<NonCopyable>>>;
+  constexpr bool p3TypeIsExpected =
+      std::same_as<decltype(p3), std::shared_ptr<Promise<void>>>;
+
+  EXPECT_TRUE(p2TypeIsExpected);
+  EXPECT_TRUE(p3TypeIsExpected);
+
+  EXPECT_EQ(final_value, 0);
+
+  p->resolve(NonCopyable(1));
+
+  EXPECT_EQ(final_value, 2);
+}
+
+TEST(Promise, voidThenChainingWorks) {
+  int final_value = 0;
+
+  auto p = Promise<void>::Create();
+  auto p2 = p->then([]() { return NonCopyable(5); });
+  auto p3 =
+      p2->then([](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); });
+  auto p4 = p3->then(
+      [&final_value](const NonCopyable& nc) { final_value = nc.val(); });
+
+  p->resolve();
+
+  EXPECT_EQ(final_value, 10);
+}
