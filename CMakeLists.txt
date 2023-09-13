@@ -50,38 +50,66 @@ FetchContent_MakeAvailable(concurrentqueue)
 # Main igasync library
 #
 set(igasync_headers
+  "include/igasync/concepts.h"
+  "include/igasync/execution_context.h"
+  "include/igasync/inline_execution_context.h"
   "include/igasync/promise.h"
+  "include/igasync/promise.inl"
   "include/igasync/promise_combiner.h"
+  "include/igasync/promise_combiner.inl"
   "include/igasync/task.h"
+  "include/igasync/task.inl"
   "include/igasync/task_list.h"
   "include/igasync/thread_pool.h"
+  "include/igasync/void_promise.inl"
 )
 set(igasync_sources
+  "src/inline_execution_context.cc"
   "src/promise_combiner.cc"
   "src/task.cc"
   "src/task_list.cc"
   "src/thread_pool.cc"
+  "src/void_promise.cc"
 )
 
 add_library(igasync STATIC ${igasync_headers} ${igasync_sources})
 target_include_directories(igasync PUBLIC include)
 target_link_libraries(igasync PUBLIC concurrentqueue)
-set_property(TARGET igasync PROPERTY CXX_STANDARD 17)
+set_property(TARGET igasync PROPERTY CXX_STANDARD 20)
 
 #
 # Tests
 #
 if (IGASYNC_BUILD_TESTS)
   set(igasync_test_sources
-    "tests/promise_combiner_test.cc"
-    "tests/promise_test.cc"
+    "tests/concepts_test.cc"
+	"tests/inline_execution_context_test.cc"
+	"tests/promise_combiner_test.cc"
+	"tests/promise_test.cc"
+    "tests/task_test.cc"
+	"tests/task_list_test.cc"
+	"tests/thread_pool_test.cc"
+	"tests/void_promise_test.cc"
   )
 
   add_executable(igasync_test ${igasync_test_sources})
   target_link_libraries(igasync_test gtest gtest_main igasync)
   target_include_directories(igasync_test PRIVATE tests/include)
-  set_property(TARGET igasync_test PROPERTY CXX_STANDARD 17)
-  gtest_discover_tests(igasync_test)
+  set_property(TARGET igasync_test PROPERTY CXX_STANDARD 20)
+
+  if (NOT EMSCRIPTEN)
+    gtest_discover_tests(igasync_test)
+  endif ()
+
+  if (EMSCRIPTEN)
+    target_compile_options(igasync PUBLIC "-pthread")
+	target_compile_options(igasync_test PUBLIC "-pthread")
+	target_compile_options(gtest PUBLIC "-pthread")
+	target_link_options(gtest PUBLIC "SHELL: -s ENVIRONMENT=web,worker -sWASM_WORKERS -sUSE_PTHREADS -pthread -s PTHREAD_POOL_SIZE=2")
+	target_link_options(igasync PUBLIC "SHELL: -s ENVIRONMENT=web,worker -sWASM_WORKERS -sUSE_PTHREADS -pthread -s PTHREAD_POOL_SIZE=2")
+	target_link_options(igasync_test PUBLIC "SHELL: -sASYNCIFY -s ENVIRONMENT=web,worker -sUSE_PTHREADS -sWASM_WORKERS -pthread -s PTHREAD_POOL_SIZE=2")
+    set_target_properties(igasync_test PROPERTIES SUFFIX ".html")
+  endif ()
 endif ()
 
 #

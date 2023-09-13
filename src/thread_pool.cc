@@ -1,47 +1,25 @@
 #include <igasync/thread_pool.h>
 
-#include <iostream>
-
-namespace {
-const char* kLogLabel = "[igasync::ThreadPool] ";
-}
-
 using namespace igasync;
 
-std::shared_ptr<ThreadPool> ThreadPool::Create(Desc desc) {
+std::shared_ptr<ThreadPool> ThreadPool::Create(ThreadPool::Desc desc) {
   return std::shared_ptr<ThreadPool>(new ThreadPool(desc));
 }
 
-ThreadPool::ThreadPool(Desc desc)
-    : enable_debug_messages_(desc.EnableDebugMessages),
-      is_cancelled_(false),
-      next_task_list_idx_(0) {
-  int num_threads = desc.AddAdditionalThreads;
-
+ThreadPool::ThreadPool(ThreadPool::Desc desc)
+    : is_cancelled_(false), next_task_list_idx_(0) {
+  size_t num_threads = desc.AdditionalThreads;
   if (desc.UseHardwareConcurrency) {
     num_threads += std::thread::hardware_concurrency();
   }
 
   // No threads - no-op
   if (num_threads <= 0) {
-    if (enable_debug_messages_) {
-      std::cout << kLogLabel << "No threads - exiting" << std::endl;
-    }
     return;
-  } else {
-    if (enable_debug_messages_) {
-      std::cout << kLogLabel << "Starting thread pool with " << num_threads
-                << " threads" << std::endl;
-    }
   }
 
-  for (int i = 0; i < num_threads; i++) {
-    threads_.push_back(std::thread([t = this]() {
-      if (t->enable_debug_messages_) {
-        std::cout << kLogLabel << "Starting executor thread [["
-                  << std::this_thread::get_id() << "]]" << std::endl;
-      }
-
+  for (size_t i = 0; i < num_threads; i++) {
+    threads_.push_back(std::thread([this, t = this]() {
       while (!t->is_cancelled_) {
         // Execute tasks from the task provider until there are no more tasks to
         // execute...
@@ -86,11 +64,6 @@ ThreadPool::ThreadPool(Desc desc)
           return t->is_cancelled_.load();
         });
       }
-
-      if (t->enable_debug_messages_) {
-        std::cout << kLogLabel << "Shutting down executor thread [["
-                  << std::this_thread::get_id() << "]]" << std::endl;
-      }
     }));
   }
 }
@@ -117,15 +90,10 @@ void ThreadPool::add_task_list(std::shared_ptr<TaskList> task_list) {
 }
 
 void ThreadPool::remove_task_list(std::shared_ptr<TaskList> task_list) {
-  {
-    std::unique_lock l(m_task_lists_);
-    for (auto it = task_lists_.begin(); it != task_lists_.end(); ++it) {
-      if (*it == task_list) {
-        task_lists_.erase(it);
-        --it;
-      }
-    }
-  }
+  std::unique_lock l(m_task_lists_);
+  task_lists_.erase(
+      std::remove(task_lists_.begin(), task_lists_.end(), task_list),
+      task_lists_.end());
 }
 
 void ThreadPool::clear_all_task_lists() {

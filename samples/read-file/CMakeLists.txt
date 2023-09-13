@@ -1,7 +1,7 @@
 #
 # read-file
 #
-set(sample-read-file-common-srcs "file_promise.h")
+set(sample-read-file-common-srcs "file_promise.h" "sha256/picosha2.h")
 
 if (EMSCRIPTEN)
   set(sample-read-file-platform-srcs "file_promise_web.cc" "main_web.cc")
@@ -12,5 +12,10 @@ endif ()
 add_executable(sample-read-file ${sample-read-file-common-srcs} ${sample-read-file-platform-srcs})
 target_link_libraries(sample-read-file igasync)
 target_include_directories(sample-read-file PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-set_property(TARGET sample-read-file PROPERTY CXX_STANDARD 17)
+set_property(TARGET sample-read-file PROPERTY CXX_STANDARD 20)
 configure_file("data_file.txt" "${CMAKE_CURRENT_BINARY_DIR}/data_file.txt" COPYONLY)
+
+if (EMSCRIPTEN)
+  target_link_options(sample-read-file PUBLIC "-sFETCH")
+  set_target_properties(sample-read-file PROPERTIES SUFFIX ".html")
+endif ()

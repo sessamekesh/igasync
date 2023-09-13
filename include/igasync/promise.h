@@ -1,93 +1,48 @@
 #ifndef IGASYNC_PROMISE_H
 #define IGASYNC_PROMISE_H
 
+#include <igasync/concepts.h>
+#include <igasync/execution_context.h>
+#include <igasync/inline_execution_context.h>
+
 #include <functional>
 #include <memory>
 #include <optional>
 #include <queue>
-#include <type_traits>
-
-#include "task_list.h"
+#include <shared_mutex>
 
 namespace igasync {
-/**
- * Simple type that comes in handy if the promise is only being used as a
- * scheduling mechanism
- */
-struct EmptyPromiseRsl {};
 
 /**
- * Streamlined Promise implementation
+ * @brief Default execution context for promise resolution (an
+ *        InlineExecutionContext instance)
+ */
+inline std::shared_ptr<ExecutionContext> gDefaultExecutionContext =
+    std::make_shared<InlineExecutionContext>();
+
+/**
+ * @brief Promise implementation for igasync library
+ * @tparam ValT Type of value the promise will contain
  *
- * A Promise is basically an Optional / Maybe type that has two additional
- * properties and a bunch of built-in behavior that make it very useful for
- * writing asynchronous code with or without concurrency, with little blocking.
+ * A promise is a container for a value that may or may not be present,
+ * but will eventually always be present.
  *
- * (1) A promise is initialized with no value (empty state)
- * (2) A promise SHOULD always have a value set exactly once (this is the
- *     responsibility of the API user)
- * (3) Once set, the promise will have the same value until move semantics
- *     are optionally invoked, or the promise is destroyed.
+ * Promises are created either with the intention of providing a value in the
+ * future with Promise<ValT>::Create. The value can then later be provided
+ * with Promise<ValT>::resolve(ValT).
  *
- * Promises do not expose their values directly, but rather can be provided a
- * callback that should be executed when the promise value becomes available.
- * If the promise value is already present, the callback will be scheduled
- * immediately.
+ * @code{.cc}
+ * auto some_promise = Promise<int>::Create();
+ * // Do the logic required to populate the promise...
+ * some_promise->resolve(42);
+ * @endcode
  *
- * Promises do not handle actual task execution, and instead schedule callback
- * tasks against a task list that is provided on callback registration.
+ * Promises can also be created with an immediately present value using the
+ * Promise<ValT>::Immediate(ValT) constructor.
  *
- * ---------------------------------- Usage ----------------------------------
- *
- * Promises must always be wrapped in a shared_ptr, create a promise with the
- * static Create command. The value held by that promise is set with the
- * "resolve" method at any time, but only once.
- *
- * A shorthand for this is to use `Immediate` to create a new promise.
- *
- * ```
- * auto my_promise = Promise<int>::Create();
- * my_promise->resolve(42);
- *
- * auto immediate_promise = Promise<int>::Immediate(9001);
- * ```
- *
- * Register callbacks with the `on_resolve` method. A const auto reference to
- * the data held in the promise will be provided as the only parameter, and no
- * return value from the callback will be used. Pass in a task list that the
- * callback method should be executed against.
- *
- * ```
- * my_promise->on_resolve(
- *     [](const int& number) { std::cout << "Resolved with: " << number; },
- *     main_thread_task_list);
- * ```
- *
- * You can also chain promises by providing a transformation.
- *
- * ```
- * auto string_promise = my_promise->then<std::string>(
- *     [](const int& number) -> std::string { return std::to_string(number); },
- *     main_thread_task_list);
- * ```
- *
- * Promises can be chained with other promise-producing methods using then_chain
- *
- * ```
- * std::shared_ptr<Promise<int>> foo(int val) { ... }
- *
- * auto chained_promise = my_promise->then_chain<int>(
- *    foo, main_thread_task_list);
- * ```
- *
- * Promise methods are thread-safe
- *
- * ----------------------------------- Tips -----------------------------------
- * (1) If you're coming from a JavaScript Promise background, be aware that...
- *   (a) Error states are not expressed in igasync::Promise. Instead, use a held
- *       type that is a variant of both success and failure states.
- *   (b) Move semantics exist that might remove a held value - once invoked, the
- *       promise becomes invalid but the reference still exists.
+ * @code{.cc}
+ * auto some_promise = Promise<int>::Immediate(42);
+ * @endcode
  */
 template <class ValT>
 class Promise : public std::enable_shared_from_this<Promise<ValT>> {
@@ -97,33 +52,17 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
  private:
   struct ThenOp {
     std::function<void(const ValT&)> Fn;
-    std::shared_ptr<TaskList> DestList;
+    std::shared_ptr<ExecutionContext> Scheduler;
   };
 
-  struct MoveOp {
-    std::function<void(const ValT)> Fn;
-    std::shared_ptr<TaskList> DestList;
+  struct ConsumeOp {
+    std::function<void(ValT&&)> Fn;
+    std::shared_ptr<ExecutionContext> Scheduler;
   };
 
-  Promise() : accepts_thens_(true), remaining_thens_(0u), is_finished_(false) {}
+  Promise() : is_finished_(false), accept_thens_(true) {}
 
  public:
-  /****************************************************************************
-   *
-   * Core API
-   *
-   ****************************************************************************/
-
-  inline static std::shared_ptr<Promise<ValT>> Create() {
-    return std::shared_ptr<Promise<ValT>>(new Promise<ValT>());
-  }
-
-  inline static std::shared_ptr<Promise<ValT>> Immediate(ValT val) {
-    auto p = Create();
-    p->resolve(std::move(val));
-    return p;
-  }
-
   Promise(const Promise<ValT>&) = delete;
   Promise(Promise<ValT>&&) = delete;
   Promise<ValT>& operator=(const Promise<ValT>&) = delete;
@@ -131,199 +70,155 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   ~Promise<ValT>() = default;
 
   /**
-   * Finalize this promise with a successful result - this will immediately
-   * queue up all success callbacks
+   * @brief Create a new, unresolved promise
+   * @return Non-null promise pointer
    */
-  std::shared_ptr<Promise<ValT>> resolve(ValT val) {
-    {
-      std::scoped_lock l(m_result_);
-
-      if (result_.has_value()) {
-        // TODO (sessamekesh): Error handling here, this promise is already
-        // resolved
-        return nullptr;
-      }
-
-      result_ = std::move(val);
-      is_finished_ = true;
-    }
-
-    // Flush queue of pending operations
-    {
-      std::scoped_lock l(m_then_queue_);
-      while (!then_queue_.empty()) {
-        auto v = std::move(then_queue_.front());
-        then_queue_.pop();
-        auto fn = std::move(v.Fn);
-        auto& task_list = v.DestList;
-
-        task_list->add_task(Task::of(
-            [fn = std::move(fn), this, lifetime = this->shared_from_this()]() {
-              resolve_inner(std::move(fn));
-            }));
-      }
-    }
-
-    maybe_consume_rsl();
-    return this->shared_from_this();
-  }
+  static std::shared_ptr<Promise<ValT>> Create();
 
   /**
-   * Invoke callback when this promise resolves
+   * @brief Create a new promise that's resolved with the provided value
+   * @param val Value of the resolved promise
+   * @return Non-null promise pointer
    */
+  static std::shared_ptr<Promise<ValT>> Immediate(ValT val);
+
+  /**
+   * @brief Finalize this promise with a successful result. This will
+   *        immediately queue up all success callbacks.
+   * @param val Value to assign to this promise
+   * @return Shared pointer reference to this promise (for chaining)
+   */
+  std::shared_ptr<Promise<ValT>> resolve(ValT val);
+
+  /**
+   * @brief Schedule a callback to be invoked when this promise resolves
+   * @tparam F Callback type - must take in a single const ValT& parameter
+   * @param f Callback implementation
+   * @param execution_context Scheduler for callback - defaults to an
+   *                          InlineExecutionContext implementation
+   * @return Shared pointer reference to this promise (for chaining)
+   */
+  template <typename F>
+    requires(NonVoidPromiseThenCb<ValT, F>)
   std::shared_ptr<Promise<ValT>> on_resolve(
-      std::function<void(const ValT&)> fn,
-      std::shared_ptr<TaskList> task_list) {
-    std::lock_guard l(m_then_queue_);
-    if (!accepts_thens_) {
-      // TODO (sessamekesh): Error handling here, this promise is already closed
-      return nullptr;
-    }
-
-    std::shared_lock l2(m_result_);
-    if (result_.has_value()) {
-      task_list->add_task(
-          Task::of([fn = std::move(fn), this, l = this->shared_from_this()]() {
-            fn(*result_);
-          }));
-      return this->shared_from_this();
-    }
-
-    // Promise is still pending in this case - add as a callback
-    ThenOp op = {std::move(fn), std::move(task_list)};
-    {
-      std::lock_guard l3(m_consume_);
-      remaining_thens_++;
-    }
-    then_queue_.emplace(std::move(op));
-
-    return this->shared_from_this();
-  }
+      F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                 gDefaultExecutionContext);
 
   /**
-   * Invoke a final callback when this promise resolves
+   * @brief Schedule a callback to consume the final value when this promise
+            resolves. Consuming a value destroys the promise.
+   * @tparam F Callback type - must take in a single ValT parameter of a
+               move constructable type.
+   * @param f Callback implementation
+   * @param execution_context Scheduler for callback - defaults to an
+   *                          InlineExecutionContext implementation
+   * @return Shared pointer reference to this promise (for chaining)
    */
-  void consume(std::function<void(ValT)> cb,
-               std::shared_ptr<TaskList> task_list) {
-    std::lock_guard l(m_then_queue_);
-    if (!accepts_thens_) {
-      // TODO (sessamekesh): Error handling here, this promise is already
-      // consumed
-      return;
-    }
+  template <typename F>
+    requires(NonVoidPromiseConsumeCb<ValT, F>)
+  std::shared_ptr<Promise<ValT>> consume(
+      F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                 gDefaultExecutionContext);
 
-    accepts_thens_ = false;
+  /**
+   * @return True if this promise is finished, false otherwise
+   */
+  bool is_finished();
 
-    std::shared_lock l2(m_result_);
-    if (result_.has_value()) {
-      task_list->add_task(Task::of(
-          [cb = std::move(cb), this, lifetime = this->shared_from_this()]() {
-            cb(std::move(*result_));
-          }));
-      return;
-    }
-
-    // Promise is still pending - add as a callback
-    consume_ = MoveOp{std::move(cb), std::move(task_list)};
-  }
-
-  /****************************************************************************
+  /**
+   * @brief UNSAFELY peek at the contained promise value
    *
-   * Chaining API
+   * This should ONLY be called if is_finished() returns true! This
+   * should not be called under normal circumstances!!
+   */
+  const ValT& unsafe_sync_peek();
+
+  /**
+   * @brief UNSAFELY consume the contained promise value
    *
-   ****************************************************************************/
-  template <typename FnT,
-            typename OutT = std::invoke_result<FnT, const ValT&>::type>
-  auto then(FnT&& cb, std::shared_ptr<TaskList> task_list)
-      -> std::shared_ptr<Promise<OutT>> {
-    auto tr = Promise<OutT>::Create();
-    on_resolve([tr, cb = std::move(cb)](const ValT& v) { tr->resolve(cb(v)); },
-               task_list);
-    return tr;
-  }
+   * This should ONLY be called if is_finished() returns true, AND
+   * this promise is known to have no consumers. This should not
+   * be called under normal circumstances!!
+   */
+  ValT unsafe_sync_move();
 
-  template <typename FnT, typename OutT = std::invoke_result<FnT, ValT>::type>
-  auto then_consuming(FnT&& cb, std::shared_ptr<TaskList> task_list)
-      -> std::shared_ptr<Promise<OutT>> {
-    auto tr = Promise<OutT>::Create();
-    consume([tr, cb = std::move(cb)](ValT v) { tr->resolve(cb(std::move(v))); },
-            task_list);
-    return tr;
-  }
+  /**
+   * @brief Create a new promise containing the result of a function invoked
+   *        with the value of this promise, once resolved.
+   * @tparam F Functor that consumes a const ValT& argument once this promise
+   *           resolves
+   * @tparam RslT
+   * @param f
+   * @param execution_context Scheduling mechanism to invoke the functor
+   * against, defaults to gDefaultExecutionContext
+   * @return A new promise
+   */
+  template <typename F,
+            typename RslT = typename std::invoke_result_t<F, const ValT&>>
+    requires(CanApplyFunctor<F, const ValT&>)
+  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                       gDefaultExecutionContext)
+      -> std::shared_ptr<Promise<RslT>>;
 
-  template <typename FnT, typename OutT = std::invoke_result<
-                              FnT, const ValT&>::type::element_type::value_type>
-  auto then_chain(FnT&& cb, std::shared_ptr<TaskList> task_list) {
-    auto tr = Promise<OutT>::Create();
-    on_resolve(
-        [tr, cb = std::move(cb), task_list](const ValT& val) {
-          cb(val)->on_resolve(
-              [tr, task_list](const OutT& vv) { tr->resolve(vv); }, task_list);
-        },
-        task_list);
-    return tr;
-  }
+  /**
+   * @brief Create a new promise containing the result of a function invoked
+   *        with the consumed value of this promise, once resolved.
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param execution_context
+   * @return A new promise
+   */
+  template <typename F, typename RslT = typename std::invoke_result_t<F, ValT>>
+    requires(CanApplyFunctor<F, ValT>)
+  auto then_consuming(F&& f,
+                      std::shared_ptr<ExecutionContext> execution_context =
+                          gDefaultExecutionContext)
+      -> std::shared_ptr<Promise<RslT>>;
 
-  template <typename FnT, typename OutT = std::invoke_result<
-                              FnT, ValT>::type::element_type::value_type>
-  auto then_chain_consuming(FnT&& cb, std::shared_ptr<TaskList> task_list)
-      -> std::shared_ptr<Promise<OutT>> {
-    auto tr = Promise<OutT>::Create();
-    consume(
-        [tr, cb = std::move(cb), task_list](ValT val) {
-          cb(std::move(val))
-              ->consume(
-                  [tr, task_list](OutT vv) { tr->resolve(std::move(vv)); },
-                  task_list);
-        },
-        task_list);
-    return tr;
-  }
+  /**
+   * @brief Create a new promise containing the result of a promise returned
+   *        from the given function, which takes the inner value of this
+   *        promise by const ref as a parameter
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param outer_execution_context Scheduling mechanism for resolving this
+   *        promise before passing to the callback function
+   * @param inner_execution_context_override Scheduling mechanism for
+   *        resolving the promise returned by f
+   * @return
+   */
+  template <typename F, typename RslT = typename std::invoke_result_t<
+                            F, const ValT&>::element_type::value_type>
+    requires(
+        HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, const ValT&>)
+  auto then_chain(F&& f,
+                  std::shared_ptr<ExecutionContext> outer_execution_context =
+                      gDefaultExecutionContext,
+                  std::shared_ptr<ExecutionContext>
+                      inner_execution_context_override = nullptr)
+      -> std::shared_ptr<Promise<RslT>>;
 
-  /****************************************************************************
-   *
-   * DANGEROUS API - DO NOT USE THE FOLLOWING METHODS UNLESS YOU KNOW WHAT YOU
-   * ARE DOING
-   *
-   ****************************************************************************/
-  bool unsafe_is_finished() {
-    std::shared_lock l(m_result_);
-    return is_finished_;
-  }
-
-  const ValT& unsafe_sync_get() {
-    std::shared_lock l(m_result_);
-    return *result_;
-  }
-
-  ValT unsafe_sync_move() {
-    std::shared_lock l(m_result_);
-    return *(std::move(result_));
-  }
-
- private:
-  void resolve_inner(std::function<void(const ValT&)> fn) {
-    fn(*result_);
-
-    {
-      std::lock_guard l(m_consume_);
-      remaining_thens_--;
-      maybe_consume_rsl();
-    }
-  }
-
-  void maybe_consume_rsl() {
-    std::lock_guard l(m_then_queue_);
-
-    if (remaining_thens_ == 0 && consume_.has_value()) {
-      MoveOp op = std::move(*consume_);
-      op.DestList->add_task(Task::of(
-          [fn = std::move(op.Fn), this, lifetime = this->shared_from_this()]() {
-            fn(std::move(*std::move(result_)));
-          }));
-      remaining_thens_ = -1;
-    }
-  }
+  /**
+   * @brief Chain a promise-producing method with this promise, consuming the
+   *        value of this promise in the process
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param outer_execution_context
+   * @param inner_execution_context_override
+   * @return
+   */
+  template <typename F, typename RslT = typename std::invoke_result_t<
+                            F, ValT>::element_type::value_type>
+    requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, ValT>)
+  auto then_chain_consuming(
+      F&& f,
+      std::shared_ptr<ExecutionContext> outer_execution_context =
+          gDefaultExecutionContext,
+      std::shared_ptr<ExecutionContext> inner_execution_context_override =
+          nullptr) -> std::shared_ptr<Promise<RslT>>;
 
  private:
   std::shared_mutex m_result_;
@@ -333,12 +228,125 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   std::queue<ThenOp> then_queue_;
 
   std::mutex m_consume_;
-  std::optional<MoveOp> consume_;
+  std::optional<ConsumeOp> consume_;
 
-  std::atomic_bool accepts_thens_;
-  std::atomic_int remaining_thens_;
+  std::atomic_bool is_finished_;
+  std::atomic_bool accept_thens_;
+};
+
+/**
+ * @brief Template specialization for void promises.
+ *
+ * The biggest differences are:
+ * 1. Resolve takes no parameters, nor do resolution callbacks
+ * 2. There's not point to specifying consuming functions, since there's no data
+ *    to consume
+ */
+template <>
+class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
+ public:
+  using value_type = void;
+
+ private:
+  struct ThenOp {
+    std::function<void()> Fn;
+    std::shared_ptr<ExecutionContext> Scheduler;
+  };
+
+  Promise() : is_finished_(false) {}
+
+ public:
+  Promise(const Promise<void>&) = delete;
+  Promise(Promise<void>&&) = delete;
+  Promise<void>& operator=(const Promise<void>&) = delete;
+  Promise<void>& operator=(Promise<void>&&) = delete;
+  ~Promise<void>() = default;
+
+ public:
+  /**
+   * @brief Create a new, unresolved void promise
+   * @return Non-null promise pointer
+   */
+  static std::shared_ptr<Promise<void>> Create();
+
+  /**
+   * @brief Create a new, already resolved void promise
+   * @return Non-null promise pointer
+   */
+  static std::shared_ptr<Promise<void>> Immediate();
+
+  /**
+   * @brief Resolve this void promise, marking it as finished
+   * @return A self-reference Promise pointer (good for chaining)
+   */
+  std::shared_ptr<Promise<void>> resolve();
+
+  /**
+   * @brief Schedule a callback to be invoked when this promise resolves
+   * @tparam F Callback type - must provide no-parameter void function
+   * @param f Callback implementation
+   * @param execution_context Scheduler for callback - defaults to an
+   *                          InlineExecutionContext implementation
+   * @return Shared pointer reference to this promise (for chaining)
+   */
+  template <typename F>
+    requires(VoidPromiseThenCb<F>)
+  std::shared_ptr<Promise<void>> on_resolve(
+      F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                 gDefaultExecutionContext);
+
+  /**
+   * @brief Schedule a callback to be invoked when this promise resolves, and
+   *        return a promise with the result value of that callback
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param execution_context
+   * @return
+   */
+  template <typename F, typename RslT = typename std::invoke_result_t<F>>
+    requires(CanApplyFunctor<F>)
+  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
+                       gDefaultExecutionContext)
+      -> std::shared_ptr<Promise<RslT>>;
+
+  /**
+   * @brief Create a new promise containing the result of a promise returned
+   *        from the given function, once this promise resolves
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param outer_execution_context Scheduling mechanism for resolving this
+   *        promise before passing to the callback function
+   * @param inner_execution_context_override Scheduling mechanism for
+   *        resolving the promise returned by f
+   * @return
+   */
+  template <typename F, typename RslT = typename std::invoke_result_t<
+                            F>::element_type::value_type>
+    requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F>)
+  auto then_chain(F&& f,
+                  std::shared_ptr<ExecutionContext> outer_execution_context =
+                      gDefaultExecutionContext,
+                  std::shared_ptr<ExecutionContext>
+                      inner_execution_context_override = nullptr)
+      -> std::shared_ptr<Promise<RslT>>;
+
+  /**
+   * @return True if this promise is finished, false otherwise
+   */
+  bool is_finished();
+
+ private:
+  std::mutex m_then_queue_;
+  std::queue<ThenOp> then_queue_;
+
   std::atomic_bool is_finished_;
 };
+
 }  // namespace igasync
+
+#include <igasync/promise.inl>
+#include <igasync/void_promise.inl>
 
 #endif

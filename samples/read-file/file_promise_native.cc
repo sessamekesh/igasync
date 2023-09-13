@@ -3,8 +3,8 @@
 
 #include "file_promise.h"
 
-using namespace igasync;
-using namespace sample;
+namespace igasync {
+namespace sample {
 
 std::shared_ptr<Promise<std::variant<std::string, FileReadError>>>
 FilePromise::Create(const std::string& file_name) {
@@ -12,7 +12,6 @@ FilePromise::Create(const std::string& file_name) {
 
   std::thread t([rsl, file_name]() {
     std::ifstream fin(file_name, std::ios::binary | std::ios::ate);
-
     if (!fin) {
       rsl->resolve(FileReadError::FileNotFound);
       return;
@@ -29,7 +28,11 @@ FilePromise::Create(const std::string& file_name) {
 
     rsl->resolve(std::move(data));
   });
+
   t.detach();
 
   return rsl;
 }
+
+}  // namespace sample
+}  // namespace igasync

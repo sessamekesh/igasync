@@ -1,61 +1,80 @@
+#include <igasync/promise_combiner.h>
+#include <igasync/thread_pool.h>
+
 #include <iostream>
 
 #include "file_promise.h"
-
-using namespace igasync;
-using namespace sample;
+#include "sha256/picosha2.h"
 
 namespace {
+auto read_file_or_default(std::string file_name, std::string default_value) {
+  return igasync::sample::FilePromise::Create(file_name)->then(
+      [file_name, default_value = std::move(default_value)](const auto& rsl) {
+        if (std::holds_alternative<std::string>(rsl)) {
+          return std::get<std::string>(rsl);
+        }
 
-void handle_file_result(std::string file_name,
-                        const std::variant<std::string, FileReadError>& rsl) {
-  if (std::holds_alternative<FileReadError>(rsl)) {
-    std::string error_text = "<<unknown error>>";
-    switch (std::get<FileReadError>(rsl)) {
-      case FileReadError::FileNotFound:
-        error_text = "File not found";
-        break;
-      case FileReadError::FileNotRead:
-        error_text = "File not read";
-        break;
-    }
-
-    std::cerr << "Could not load file " << file_name << ": " << error_text
-              << std::endl;
-
-    return;
-  }
-
-  std::string file_text = std::get<std::string>(rsl);
-  std::cout << "----- BEGIN " << file_name << " ------" << std::endl
-            << file_text << std::endl
-            << "----- END " << file_name << " ------" << std::endl
-            << std::endl;
+        std::cout << "Failed to read file '" << file_name
+                  << "' - replacing with default value" << std::endl;
+        return default_value;
+      });
 }
 
-void test_file(std::string file_name, std::shared_ptr<TaskList> task_list) {
-  std::cout << "Attempting to read file " << file_name << "..." << std::endl;
-
-  FilePromise::Create(file_name)->on_resolve(
-      std::bind(&handle_file_result, file_name, std::placeholders::_1),
-      task_list);
+std::string hash(const std::string& s) {
+  return picosha2::hash256_hex_string(s);
 }
-
 }  // namespace
 
 int main() {
-  auto task_list = TaskList::Create();
+  auto thread_pool = igasync::ThreadPool::Create();
+  auto async_task_list = igasync::TaskList::Create();
+  thread_pool->add_task_list(async_task_list);
 
-  test_file("data_file.txt", task_list);
-  test_file("does_not_exist.txt", task_list);
+  auto dataFilePromise = ::read_file_or_default("data_file.txt", "EMPTY TEXT");
+  auto dataFileHashPromise = dataFilePromise->then(::hash, async_task_list);
 
-  // For ten seconds, flush task list and sleep for a bit.
-  for (int i = 0; i < 100; i++) {
-    while (task_list->execute_next()) {
+  auto missingFilePromise =
+      ::read_file_or_default("missing_file.txt", "Missing File Text");
+  auto missingFileHashPromise =
+      missingFilePromise->then(::hash, async_task_list);
+
+  auto dataFilePromiseCombiner = igasync::PromiseCombiner::Create();
+  auto data_file_key = dataFilePromiseCombiner->add(dataFilePromise);
+  auto data_hash_key = dataFilePromiseCombiner->add(dataFileHashPromise);
+  auto data_file_done = dataFilePromiseCombiner->combine(
+      [data_file_key, data_hash_key](igasync::PromiseCombiner::Result rsl) {
+        const std::string& data_file_contents = rsl.get(data_file_key);
+        const std::string& data_hash_contents = rsl.get(data_hash_key);
+
+        std::cout << "---- data_file.txt ----\n"
+                  << data_file_contents << "\n\n"
+                  << "SHA256: " << data_hash_contents << std::endl;
+      });
+
+  auto missingFilePromiseCombiner = igasync::PromiseCombiner::Create();
+  auto missing_file_key = missingFilePromiseCombiner->add(missingFilePromise);
+  auto missing_hash_key =
+      missingFilePromiseCombiner->add(missingFileHashPromise);
+  auto missing_file_done = missingFilePromiseCombiner->combine(
+      [missing_file_key,
+       missing_hash_key](igasync::PromiseCombiner::Result rsl) {
+        const std::string& data_file_contents = rsl.get(missing_file_key);
+        const std::string& data_hash_contents = rsl.get(missing_hash_key);
+
+        std::cout << "---- missing_file.txt ----\n"
+                  << data_file_contents << "\n\n"
+                  << "SHA256: " << data_hash_contents << std::endl;
+      });
+
+  // For ten seconds, sleep for a bit and hope for finishing
+  for (int i = 0; i < 200; i++) {
+    if (missing_file_done->is_finished() && data_file_done->is_finished()) {
+      break;
     }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
-  std::cout << "======== FINISHED ========" << std::endl;
+  std::cout << "FINISHED" << std::endl;
+
+  return 0;
 }

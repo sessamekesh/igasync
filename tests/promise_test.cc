@@ -1,245 +1,227 @@
 #include <gtest/gtest.h>
 #include <igasync/promise.h>
-#include <test_objects.h>
+#include <igasync/task_list.h>
 
 using namespace igasync;
 
 namespace {
-void flush_task_list(TaskList* tasks) {
-  while (tasks->execute_next()) {
-  }
-}
+class NonCopyable {
+ public:
+  NonCopyable(int val) : val_(val) {}
+  NonCopyable(const NonCopyable&) = delete;
+  NonCopyable& operator=(const NonCopyable&) = delete;
+  NonCopyable(NonCopyable&& o) = default;
+  NonCopyable& operator=(NonCopyable&& o) = default;
 
+  int val() const { return val_; }
+
+ private:
+  int val_;
+};
 }  // namespace
 
-TEST(Promise, initializedPromiseIsNotResolved) {
+TEST(Promise, defaultPromiseIsNotResolved) {
   auto p = Promise<int>::Create();
 
-  auto task_list = TaskList::Create();
-
   bool is_set = false;
-  p->on_resolve([&is_set](const auto&) { is_set = true; }, task_list);
 
-  ::flush_task_list(task_list.get());
+  p->on_resolve([&is_set](const auto&) { is_set = true; });
 
   EXPECT_FALSE(is_set);
-  EXPECT_FALSE(p->unsafe_is_finished());
+  EXPECT_FALSE(p->is_finished());
 }
 
 TEST(Promise, immediatePromiseIsResolved) {
-  auto p = Promise<int>::Immediate(100);
+  auto p = Promise<int>::Immediate(42);
 
+  bool is_set = false;
+  int observed_value = 0;
+
+  EXPECT_TRUE(p->is_finished());
+
+  p->on_resolve([&is_set, &observed_value](const auto& v) {
+    is_set = true;
+    observed_value = v;
+  });
+
+  EXPECT_TRUE(is_set);
+  EXPECT_EQ(observed_value, 42);
+}
+
+TEST(Promise, tasksScheduledOnResolve) {
+  auto p = Promise<int>::Create();
   auto task_list = TaskList::Create();
 
   bool is_set = false;
-  int val = 0;
+  int observed_value = 0;
+
   p->on_resolve(
-      [&is_set, &val](const auto& v) {
+      [&is_set, &observed_value](const auto& v) {
         is_set = true;
-        val = v;
+        observed_value = v;
       },
       task_list);
 
-  ::flush_task_list(task_list.get());
+  bool second_task_resolved = false;
+  p->on_resolve(
+      [&second_task_resolved](const auto&) { second_task_resolved = true; },
+      task_list);
+
+  EXPECT_FALSE(is_set);
+  EXPECT_EQ(observed_value, 0);
+
+  EXPECT_FALSE(task_list->execute_next());
+
+  p->resolve(42);
+
+  EXPECT_FALSE(is_set);
+  EXPECT_EQ(observed_value, 0);
+
+  // This is an implementation detail, may want to flush the task list instead
+  // That said, it'll be nice to see if the task list has more than 2 tasks
+  //  scheduled for some reason in the future (is that really necessary?)
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_FALSE(task_list->execute_next());
 
   EXPECT_TRUE(is_set);
-  EXPECT_TRUE(p->unsafe_is_finished());
-  EXPECT_EQ(val, 100);
-  EXPECT_EQ(p->unsafe_sync_get(), 100);
+  EXPECT_EQ(observed_value, 42);
+  EXPECT_TRUE(second_task_resolved);
 }
 
-TEST(Promise, resolutionTriggersExistingCallbacks) {
-  auto p = Promise<int>::Create();
+TEST(Promise, worksWithNonCopyableTypes) {
+  auto p = Promise<NonCopyable>::Create();
+  p->resolve(NonCopyable(5));
 
-  auto task_list = TaskList::Create();
-
-  bool first_method_called = false;
-  int first_value = -1;
-  bool second_method_called = false;
-  int second_value = -1;
-
+  int inner_value = 0;
   p->on_resolve(
-      [&first_method_called, &first_value](const auto& v) {
-        first_method_called = true;
-        first_value = v;
-      },
-      task_list);
-  p->on_resolve(
-      [&second_method_called, &second_value](const auto& v) {
-        second_method_called = true;
-        second_value = v;
-      },
-      task_list);
+      [&inner_value](const NonCopyable& v) { inner_value = v.val(); });
 
-  ::flush_task_list(task_list.get());
-
-  EXPECT_FALSE(first_method_called);
-  EXPECT_FALSE(second_method_called);
-
-  EXPECT_NE(p->resolve(100), nullptr);
-
-  ::flush_task_list(task_list.get());
-
-  EXPECT_TRUE(first_method_called);
-  EXPECT_TRUE(second_method_called);
-  EXPECT_EQ(first_value, 100);
-  EXPECT_EQ(second_value, 100);
+  EXPECT_EQ(inner_value, 5);
 }
 
-TEST(Promise, resolutionTriggersNewCallbacks) {
-  auto p = Promise<int>::Create();
+TEST(Promise, consumesWithNonCopyableTypes) {
+  auto p = Promise<NonCopyable>::Create();
+  p->resolve(NonCopyable(5));
 
+  int consumed_value = 0;
+  p->consume([&consumed_value](NonCopyable v) { consumed_value = v.val(); });
+
+  EXPECT_EQ(consumed_value, 5);
+}
+
+TEST(Promise, doesThensThenConsumes) {
+  auto p = Promise<NonCopyable>::Create();
   auto task_list = TaskList::Create();
 
-  bool first_method_called = false;
-  int first_value = -1;
-  bool second_method_called = false;
-  int second_value = -1;
+  int consumed_value = 0;
+  int peeked_value = 0;
 
-  EXPECT_NE(p->resolve(100), nullptr);
+  p->on_resolve([&peeked_value](const auto& v) { peeked_value = v.val(); },
+                task_list)
+      ->consume([&consumed_value](auto v) { consumed_value = v.val(); },
+                task_list);
 
-  p->on_resolve(
-      [&first_method_called, &first_value](const auto& v) {
-        first_method_called = true;
-        first_value = v;
-      },
-      task_list);
-  p->on_resolve(
-      [&second_method_called, &second_value](const auto& v) {
-        second_method_called = true;
-        second_value = v;
-      },
-      task_list);
+  p->resolve(NonCopyable(5));
 
-  ::flush_task_list(task_list.get());
+  EXPECT_EQ(consumed_value, 0);
+  EXPECT_EQ(peeked_value, 0);
 
-  EXPECT_TRUE(first_method_called);
-  EXPECT_TRUE(second_method_called);
-  EXPECT_EQ(first_value, 100);
-  EXPECT_EQ(second_value, 100);
+  // Implementation detail - may schedule more than 1 task, but shouldn't
+  EXPECT_TRUE(task_list->execute_next());
+
+  EXPECT_EQ(peeked_value, 5);
+  EXPECT_EQ(consumed_value, 0);
+
+  EXPECT_TRUE(task_list->execute_next());
+
+  EXPECT_EQ(peeked_value, 5);
+  EXPECT_EQ(consumed_value, 5);
 }
 
-TEST(Promise, canUseNonCopyableObjects) {
-  auto p = Promise<::NonCopyableObject>::Create();
+TEST(Promise, unsafeSyncGetWorks) {
+  auto p = Promise<NonCopyable>::Create();
 
-  auto task_list = TaskList::Create();
+  p->resolve(NonCopyable(5));
 
-  int val = -1;
-  int val2 = -1;
-
-  p->on_resolve([&val](const auto& v) { val = v.InnerValue; }, task_list);
-  p->consume([&val2](auto v) { val2 = v.InnerValue; }, task_list);
-
-  EXPECT_NE(p->resolve(::NonCopyableObject(100)), nullptr);
-
-  ::flush_task_list(task_list.get());
-
-  EXPECT_EQ(val, 100);
-  EXPECT_EQ(val2, 100);
+  EXPECT_EQ(p->unsafe_sync_peek().val(), 5);
 }
 
-TEST(Promise, holdsReferenceUntilDeletionIfNotConsumed) {
-  int call_count = 0;
-  int dtor_count = 0;
+TEST(Promise, unsafeSyncMoveWorks) {
+  auto p = Promise<NonCopyable>::Create();
 
-  auto p = Promise<::DestructorTracker>::Create();
-  auto task_list = TaskList::Create();
+  p->resolve(NonCopyable(5));
 
-  p->on_resolve([&call_count](const auto&) { call_count++; }, task_list);
-  p->on_resolve([&call_count](const auto&) { call_count++; }, task_list);
-  p->on_resolve([&call_count](const auto&) { call_count++; }, task_list);
-
-  p->resolve(::DestructorTracker(&dtor_count));
-  ::flush_task_list(task_list.get());
-
-  EXPECT_EQ(call_count, 3);
-  EXPECT_EQ(dtor_count, 0);
-
-  // Trigger promise cleanup
-  p = nullptr;
-
-  EXPECT_EQ(call_count, 3);
-  EXPECT_EQ(dtor_count, 1);
+  EXPECT_EQ(p->unsafe_sync_move().val(), 5);
 }
 
-TEST(Promise, releasesOwnershipOnConsume) {
-  int call_count = 0;
-  int dtor_count = 0;
-
-  auto p = Promise<::DestructorTracker>::Create();
-  auto task_list = TaskList::Create();
-
-  p->on_resolve([&call_count](const auto&) { call_count++; }, task_list);
-  p->consume([&call_count](auto) { call_count++; }, task_list);
-
-  p->resolve(::DestructorTracker(&dtor_count));
-  ::flush_task_list(task_list.get());
-
-  EXPECT_EQ(call_count, 2);
-  EXPECT_EQ(dtor_count, 1);
-
-  // Shouldn't do anything else
-  p = nullptr;
-
-  EXPECT_EQ(call_count, 2);
-  EXPECT_EQ(dtor_count, 1);
-}
-
-TEST(Promise, thenPopulatesNewPromises) {
+TEST(Promise, nonVoidThenChainingWorks) {
   int final_value = 0;
 
-  auto p = Promise<int>::Create();
-  auto task_list = TaskList::Create();
+  auto p = Promise<NonCopyable>::Create();
+  auto p2 =
+      p->then([](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); });
+  auto p3 =
+      p2->then([&final_value](const NonCopyable& n) { final_value = n.val(); });
 
-  auto p2 = p->then([](const int& v) { return v * 2; }, task_list);
-  auto p4 = p2->then([](const int& v) { return v * 2; }, task_list);
+  constexpr bool p2TypeIsExpected =
+      std::same_as<decltype(p2), std::shared_ptr<Promise<NonCopyable>>>;
+  constexpr bool p3TypeIsExpected =
+      std::same_as<decltype(p3), std::shared_ptr<Promise<void>>>;
 
-  p4->on_resolve([&final_value](const int& v) { final_value = v; }, task_list);
-
-  ::flush_task_list(task_list.get());
+  EXPECT_TRUE(p2TypeIsExpected);
+  EXPECT_TRUE(p3TypeIsExpected);
 
   EXPECT_EQ(final_value, 0);
 
-  p->resolve(1);
+  p->resolve(NonCopyable(1));
 
-  ::flush_task_list(task_list.get());
+  EXPECT_EQ(final_value, 2);
+}
 
+TEST(Promise, thenConsumeWorks) {
+  int final_value = 0;
+  std::invocable<int, bool>;
+  auto p = Promise<int>::Create();
+  auto p2 = p->then_consuming([](int a) { return NonCopyable(a); })
+                ->then_consuming(
+                    [](NonCopyable a) { return NonCopyable(a.val() * 2); })
+                ->then_consuming(
+                    [&final_value](NonCopyable a) { final_value = a.val(); });
+
+  p->resolve(2);
   EXPECT_EQ(final_value, 4);
 }
 
-TEST(Promise, thenChainPopulatesNewPromises) {
+TEST(Promise, thenChainWorks) {
   int final_value = 0;
 
   auto p = Promise<int>::Create();
-  auto task_list = TaskList::Create();
-  auto background_task_list = TaskList::Create();
+  auto pout =
+      p->then_consuming([](int val) { return NonCopyable(val); })
+          ->then_chain([](const NonCopyable& val) {
+            return Promise<NonCopyable>::Immediate(NonCopyable(val.val() * 2));
+          })
+          ->then([&final_value](const auto& val) { final_value = val.val(); });
 
-  auto p2 = p->then_chain(
-      [background_task_list](const int& v) {
-        auto scheduled_update = Promise<int>::Create();
+  p->resolve(2);
+  EXPECT_EQ(final_value, 4);
+}
 
-        // Simulate a long-running task
-        background_task_list->add_task(Task::of(
-            [scheduled_update, v]() { scheduled_update->resolve(v * 2); }));
+TEST(Promise, thenChainConsumingWorks) {
+  int final_value = 0;
 
-        return scheduled_update;
-      },
-      task_list);
+  auto p = Promise<int>::Create();
+  auto pout =
+      p->then_chain_consuming([](int val) {
+         return Promise<NonCopyable>::Immediate(NonCopyable(val));
+       })
+          ->then_chain_consuming([](NonCopyable v) {
+            return Promise<NonCopyable>::Immediate(NonCopyable(v.val() * 2));
+          })
+          ->consume(
+              [&final_value](NonCopyable val) { final_value = val.val(); });
 
-  p2->on_resolve([&final_value](const int& v) { final_value = v; }, task_list);
-
-  p->resolve(1);
-
-  // Flush main task list without simulated background long-running task list
-  ::flush_task_list(task_list.get());
-
-  EXPECT_EQ(final_value, 0);
-
-  // Flush background task list, triggering finish of inner promise for p2
-  ::flush_task_list(background_task_list.get());
-
-  // Percolate thennables from main task list
-  ::flush_task_list(task_list.get());
-
-  EXPECT_EQ(final_value, 2);
+  p->resolve(2);
+  EXPECT_EQ(final_value, 4);
 }
