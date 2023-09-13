@@ -25,8 +25,6 @@ std::shared_ptr<PromiseCombiner> PromiseCombiner::Create() {
 }
 
 void PromiseCombiner::resolve_promise(uint16_t key) {
-  std::lock_guard l(m_entries_);
-
   if (key != 0u) {
     for (size_t i = 0; i < entries_.size(); i++) {
       if (entries_[i].Key == key) {

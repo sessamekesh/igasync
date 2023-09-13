@@ -103,5 +103,5 @@ endif ()
 # Examples
 #
 if (IGASYNC_BUILD_EXAMPLES)
-  # add_subdirectory(samples)
+  add_subdirectory(samples)
 endif ()
