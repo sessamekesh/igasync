@@ -15,8 +15,9 @@ concept HasAppropriateFunctor = requires(F&& f, Args&&... args) {
 };
 
 template <typename F, typename... Args>
-concept CanApplyFunctor =
-    requires(F&& f, Args&&... args) { requires(std::invocable<F, Args...>); };
+concept CanApplyFunctor = requires(F&& f, Args&&... args) {
+  requires(std::is_invocable_v<F, Args...>);
+};
 
 template <typename ValT>
 concept IsVoid = std::is_void_v<ValT>;
@@ -41,8 +42,8 @@ concept HasNoParamsOperator = requires(F f) {
 
 template <typename ValT, typename F>
 concept NonVoidPromiseThenCb = requires(F f, ValT val) {
-  { f(val) } -> IsVoid;
-  requires(HasSingleConstRefParam<ValT, F>);
+  requires(std::is_invocable_v<F, const ValT&>);
+  requires(std::is_void_v<std::invoke_result_t<F, const ValT&>>);
 };
 
 template <typename ValT, typename F>
@@ -53,9 +54,9 @@ concept NonVoidPromiseConsumeCb = requires(F f, ValT val) {
 };
 
 template <typename F>
-concept VoidPromiseThenCb = requires(F f) {
-  { f() } -> IsVoid;
-  requires(HasNoParamsOperator<F>);
+concept VoidPromiseThenCb = requires(F&& f) {
+  requires(std::is_invocable_v<F>);
+  requires(std::is_void_v<std::invoke_result_t<F>>);
 };
 
 }  // namespace igasync
