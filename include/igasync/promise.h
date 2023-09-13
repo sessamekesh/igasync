@@ -159,6 +159,66 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
                        gDefaultExecutionContext)
       -> std::shared_ptr<Promise<RslT>>;
 
+  /**
+   * @brief Create a new promise containing the result of a function invoked
+   *        with the consumed value of this promise, once resolved.
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param execution_context
+   * @return A new promise
+   */
+  template <typename F, typename RslT = std::invoke_result_t<F, ValT>>
+    requires(CanApplyFunctor<F, ValT>)
+  auto then_consuming(F&& f,
+                      std::shared_ptr<ExecutionContext> execution_context =
+                          gDefaultExecutionContext)
+      -> std::shared_ptr<Promise<RslT>>;
+
+  /**
+   * @brief Create a new promise containing the result of a promise returned
+   *        from the given function, which takes the inner value of this
+   *        promise by const ref as a parameter
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param outer_execution_context Scheduling mechanism for resolving this
+   *        promise before passing to the callback function
+   * @param inner_execution_context_override Scheduling mechanism for
+   *        resolving the promise returned by f
+   * @return
+   */
+  template <typename F, typename RslT = std::invoke_result_t<
+                            F, const ValT&>::element_type::value_type>
+    requires(
+        HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, const ValT&>)
+  auto then_chain(F&& f,
+                  std::shared_ptr<ExecutionContext> outer_execution_context =
+                      gDefaultExecutionContext,
+                  std::shared_ptr<ExecutionContext>
+                      inner_execution_context_override = nullptr)
+      -> std::shared_ptr<Promise<RslT>>;
+
+  /**
+   * @brief Chain a promise-producing method with this promise, consuming the
+   *        value of this promise in the process
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param outer_execution_context
+   * @param inner_execution_context_override
+   * @return
+   */
+  template <typename F, typename RslT = std::invoke_result_t<
+                            F, ValT>::element_type::value_type>
+    requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, ValT>)
+  auto then_chain_consuming(
+      F&& f,
+      std::shared_ptr<ExecutionContext> outer_execution_context =
+          gDefaultExecutionContext,
+      std::shared_ptr<ExecutionContext> inner_execution_context_override =
+          nullptr) -> std::shared_ptr<Promise<RslT>>;
+
  private:
   std::shared_mutex m_result_;
   std::optional<ValT> result_;
@@ -183,6 +243,9 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
  */
 template <>
 class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
+ public:
+  using value_type = void;
+
  private:
   struct ThenOp {
     std::function<void()> Fn;
@@ -244,6 +307,28 @@ class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
     requires(CanApplyFunctor<F>)
   auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
                        gDefaultExecutionContext)
+      -> std::shared_ptr<Promise<RslT>>;
+
+  /**
+   * @brief Create a new promise containing the result of a promise returned
+   *        from the given function, once this promise resolves
+   * @tparam F
+   * @tparam RslT
+   * @param f
+   * @param outer_execution_context Scheduling mechanism for resolving this
+   *        promise before passing to the callback function
+   * @param inner_execution_context_override Scheduling mechanism for
+   *        resolving the promise returned by f
+   * @return
+   */
+  template <typename F,
+            typename RslT = std::invoke_result_t<F>::element_type::value_type>
+    requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F>)
+  auto then_chain(F&& f,
+                  std::shared_ptr<ExecutionContext> outer_execution_context =
+                      gDefaultExecutionContext,
+                  std::shared_ptr<ExecutionContext>
+                      inner_execution_context_override = nullptr)
       -> std::shared_ptr<Promise<RslT>>;
 
   /**

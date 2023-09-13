@@ -10,14 +10,13 @@ template <typename T>
 concept Any = true;
 
 template <typename ValT, typename F, typename... Args>
-concept HasAppropriateFunctor = requires(F f, Args... args) {
-  { f.operator()(args...) } -> std::same_as<ValT>;
+concept HasAppropriateFunctor = requires(F&& f, Args&&... args) {
+  requires(std::same_as<std::invoke_result_t<F, Args...>, ValT>);
 };
 
 template <typename F, typename... Args>
-concept CanApplyFunctor = requires(F f, Args... args) {
-  { f.operator()(args...) } -> Any;
-};
+concept CanApplyFunctor =
+    requires(F&& f, Args&&... args) { requires(std::invocable<F, Args...>); };
 
 template <typename ValT>
 concept IsVoid = std::is_void_v<ValT>;

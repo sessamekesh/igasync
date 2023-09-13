@@ -179,17 +179,49 @@ TEST(Promise, nonVoidThenChainingWorks) {
   EXPECT_EQ(final_value, 2);
 }
 
-TEST(Promise, voidThenChainingWorks) {
+TEST(Promise, thenConsumeWorks) {
+  int final_value = 0;
+  std::invocable<int, bool>;
+  auto p = Promise<int>::Create();
+  auto p2 = p->then_consuming([](int a) { return NonCopyable(a); })
+                ->then_consuming(
+                    [](NonCopyable a) { return NonCopyable(a.val() * 2); })
+                ->then_consuming(
+                    [&final_value](NonCopyable a) { final_value = a.val(); });
+
+  p->resolve(2);
+  EXPECT_EQ(final_value, 4);
+}
+
+TEST(Promise, thenChainWorks) {
   int final_value = 0;
 
-  auto p = Promise<void>::Create();
-  auto p2 = p->then([]() { return NonCopyable(5); });
-  auto p3 =
-      p2->then([](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); });
-  auto p4 = p3->then(
-      [&final_value](const NonCopyable& nc) { final_value = nc.val(); });
+  auto p = Promise<int>::Create();
+  auto pout =
+      p->then_consuming([](int val) { return NonCopyable(val); })
+          ->then_chain([](const NonCopyable& val) {
+            return Promise<NonCopyable>::Immediate(NonCopyable(val.val() * 2));
+          })
+          ->then([&final_value](const auto& val) { final_value = val.val(); });
 
-  p->resolve();
+  p->resolve(2);
+  EXPECT_EQ(final_value, 4);
+}
 
-  EXPECT_EQ(final_value, 10);
+TEST(Promise, thenChainConsumingWorks) {
+  int final_value = 0;
+
+  auto p = Promise<int>::Create();
+  auto pout =
+      p->then_chain_consuming([](int val) {
+         return Promise<NonCopyable>::Immediate(NonCopyable(val));
+       })
+          ->then_chain_consuming([](NonCopyable v) {
+            return Promise<NonCopyable>::Immediate(NonCopyable(v.val() * 2));
+          })
+          ->consume(
+              [&final_value](NonCopyable val) { final_value = val.val(); });
+
+  p->resolve(2);
+  EXPECT_EQ(final_value, 4);
 }

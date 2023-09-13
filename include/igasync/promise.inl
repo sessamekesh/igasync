@@ -10,7 +10,7 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::Create() {
 template <class ValT>
 std::shared_ptr<Promise<ValT>> Promise<ValT>::Immediate(ValT val) {
   auto p = Create();
-  p->resolve(val);
+  p->resolve(std::move(val));
   return p;
 }
 
@@ -140,6 +140,83 @@ auto Promise<ValT>::then(F&& f,
         }
       },
       execution_context);
+  return tr;
+}
+
+template <class ValT>
+template <typename F, typename RslT>
+  requires(CanApplyFunctor<F, ValT>)
+auto Promise<ValT>::then_consuming(
+    F&& f, std::shared_ptr<ExecutionContext> execution_context)
+    -> std::shared_ptr<Promise<RslT>> {
+  auto tr = Promise<RslT>::Create();
+
+  consume(
+      [tr, f = std::move(f)](ValT v) {
+        if constexpr (std::is_void_v<RslT>) {
+          f(std::move(v));
+          tr->resolve();
+        } else {
+          tr->resolve(f(std::move(v)));
+        }
+      },
+      execution_context);
+  return tr;
+}
+
+template <class ValT>
+template <typename F, typename RslT>
+  requires(
+      HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, const ValT&>)
+auto Promise<ValT>::then_chain(
+    F&& f, std::shared_ptr<ExecutionContext> outer_execution_context,
+    std::shared_ptr<ExecutionContext> inner_execution_context_override)
+    -> std::shared_ptr<Promise<RslT>> {
+  if (inner_execution_context_override == nullptr) {
+    inner_execution_context_override = outer_execution_context;
+  }
+
+  auto tr = Promise<RslT>::Create();
+  on_resolve(
+      [tr, f = std::move(f),
+       inner_execution_context_override](const ValT& val) {
+        if constexpr (std::is_void_v<RslT>) {
+          f(val)->on_resolve([tr]() { tr->resolve(); },
+                             inner_execution_context_override);
+        } else {
+          f(val)->consume([tr](auto v) { tr->resolve(std::move(v)); },
+                          inner_execution_context_override);
+        }
+      },
+      outer_execution_context);
+  return tr;
+}
+
+template <class ValT>
+template <typename F, typename RslT>
+  requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, ValT>)
+auto Promise<ValT>::then_chain_consuming(
+    F&& f, std::shared_ptr<ExecutionContext> outer_execution_context,
+    std::shared_ptr<ExecutionContext> inner_execution_context_override)
+    -> std::shared_ptr<Promise<RslT>> {
+  if (inner_execution_context_override == nullptr) {
+    inner_execution_context_override = outer_execution_context;
+  }
+
+  auto tr = Promise<RslT>::Create();
+  consume(
+      [tr, f = std::move(f), inner_execution_context_override](ValT val) {
+        if constexpr (std::is_void_v<RslT>) {
+          f(std::move(val))
+              ->on_resolve([tr]() { tr->resolve(); },
+                           inner_execution_context_override);
+        } else {
+          f(std::move(val))
+              ->consume([tr](auto v) { tr->resolve(std::move(v)); },
+                        inner_execution_context_override);
+        }
+      },
+      outer_execution_context);
   return tr;
 }
 
