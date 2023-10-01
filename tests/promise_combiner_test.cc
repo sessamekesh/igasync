@@ -151,3 +151,39 @@ TEST(PromiseCombiner, DestructsAfterResolving) {
   EXPECT_EQ(dtor_1, 1);
   EXPECT_EQ(dtor_2, 1);
 }
+
+TEST(PromiseCombiner, CanUseVoidPromises) {
+  auto combiner = PromiseCombiner::Create();
+
+  auto p1 = Promise<void>::Create();
+  auto p2 = Promise<void>::Create();
+  auto p3 = Promise<int>::Create();
+
+  constexpr bool isVoidReturn = std::same_as<decltype(combiner->add(p1)), void>;
+  constexpr bool isVoidReturn2 =
+      std::same_as<decltype(combiner->add(p2)), void>;
+  EXPECT_TRUE(isVoidReturn);
+  EXPECT_TRUE(isVoidReturn2);
+
+  combiner->add(p1);
+  combiner->add(p2);
+  auto int_key = combiner->add(p3);
+
+  bool has_run = false;
+
+  combiner->combine([&has_run](auto rsl) { has_run = true; });
+
+  EXPECT_FALSE(has_run);
+
+  p3->resolve(56);
+
+  EXPECT_FALSE(has_run);
+
+  p1->resolve();
+
+  EXPECT_FALSE(has_run);
+
+  p2->resolve();
+
+  EXPECT_TRUE(has_run);
+}

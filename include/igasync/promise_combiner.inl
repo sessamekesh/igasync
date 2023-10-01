@@ -41,7 +41,6 @@ T PromiseCombiner::Result::move(
   for (size_t i = 0; i < combiner_->entries_.size(); i++) {
     if (combiner_->entries_[i].Key == key.key_) {
       std::shared_ptr<Promise<T>> pp = std::static_pointer_cast<Promise<T>>(
-
           combiner_->entries_[i].PromiseRaw);
 
       if (!pp) {
@@ -67,7 +66,8 @@ T PromiseCombiner::Result::move(
 }
 
 template <typename T>
-PromiseCombiner::PromiseKey<T, false> PromiseCombiner::add(
+  requires(!IsVoid<T>)
+[[nodiscard]] PromiseCombiner::PromiseKey<T, false> PromiseCombiner::add(
     std::shared_ptr<Promise<T>> promise,
     std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_entries_);
@@ -94,9 +94,9 @@ PromiseCombiner::PromiseKey<T, false> PromiseCombiner::add(
 
 template <typename T>
   requires(!IsVoid<T>)
-PromiseCombiner::PromiseKey<T, true> PromiseCombiner::add_consuming(
-    std::shared_ptr<Promise<T>> promise,
-    std::shared_ptr<ExecutionContext> execution_context) {
+PromiseCombiner::PromiseKey<T, true> [[nodiscard]] PromiseCombiner::
+    add_consuming(std::shared_ptr<Promise<T>> promise,
+                  std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_entries_);
   if (is_finished_) {
     // TODO (sessamekesh): Invoke callback for 'finish already registered'

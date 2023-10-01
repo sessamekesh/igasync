@@ -46,3 +46,25 @@ void PromiseCombiner::resolve_promise(uint16_t key) {
 
   final_promise_->resolve(std::move(result_));
 }
+
+void PromiseCombiner::add(std::shared_ptr<Promise<void>> promise,
+                          std::shared_ptr<ExecutionContext> execution_context) {
+  std::lock_guard l(m_entries_);
+  if (is_finished_) {
+    // TODO (sessamekesh): Invoke callback for 'cannot add promises after finish
+    // already registered'
+    return;
+  }
+
+  PromiseKey<void, false> key(next_key_++);
+  entries_.push_back({key.key_, promise, false, false});
+
+  promise->on_resolve(
+      [key, l = weak_from_this()]() {
+        auto t = l.lock();
+        if (t == nullptr) return;
+
+        t->resolve_promise(key.key_);
+      },
+      execution_context);
+}

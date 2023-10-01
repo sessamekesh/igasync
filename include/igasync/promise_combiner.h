@@ -57,7 +57,8 @@ class PromiseCombiner : public std::enable_shared_from_this<PromiseCombiner> {
 
     // Strictly required, but avoid using outside of igasync library code!
     // Required here to allow std::optional assignment in Promise object
-    Result(Result&& o) : combiner_(std::exchange(o.combiner_, nullptr)) {}
+    Result(Result&& o) noexcept
+        : combiner_(std::exchange(o.combiner_, nullptr)) {}
     Result& operator=(Result&& o);
     ~Result();
 
@@ -71,14 +72,20 @@ class PromiseCombiner : public std::enable_shared_from_this<PromiseCombiner> {
  public:
   static std::shared_ptr<PromiseCombiner> Create();
 
-  template <typename T>
-  PromiseKey<T, false> add(std::shared_ptr<Promise<T>> promise,
-                           std::shared_ptr<ExecutionContext> execution_context =
-                               gDefaultExecutionContext);
+  void add(std::shared_ptr<Promise<void>> promise,
+           std::shared_ptr<ExecutionContext> execution_context =
+               gDefaultExecutionContext);
 
   template <typename T>
     requires(!IsVoid<T>)
-  PromiseKey<T, true> add_consuming(
+  [[nodiscard]] PromiseKey<T, false> add(
+      std::shared_ptr<Promise<T>> promise,
+      std::shared_ptr<ExecutionContext> execution_context =
+          gDefaultExecutionContext);
+
+  template <typename T>
+    requires(!IsVoid<T>)
+  [[nodiscard]] PromiseKey<T, true> add_consuming(
       std::shared_ptr<Promise<T>> promise,
       std::shared_ptr<ExecutionContext> execution_context =
           gDefaultExecutionContext);
