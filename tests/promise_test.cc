@@ -225,3 +225,39 @@ TEST(Promise, thenChainConsumingWorks) {
   p->resolve(2);
   EXPECT_EQ(final_value, 4);
 }
+
+TEST(Promise, consumeHappensLastInVariableSpeedExecutionContexts) {
+  auto p = Promise<int>::Create();
+
+  auto slow_list = TaskList::Create();
+  auto fast_list = TaskList::Create();
+
+  bool is_thenned = false;
+  bool is_consumed = false;
+
+  p->on_resolve([&is_thenned](const auto&) { is_thenned = true; }, slow_list);
+  p->consume([&is_consumed](auto) { is_consumed = true; }, fast_list);
+
+  EXPECT_FALSE(is_thenned);
+  EXPECT_FALSE(is_consumed);
+
+  p->resolve(10);
+
+  EXPECT_FALSE(is_thenned);
+  EXPECT_FALSE(is_consumed);
+
+  EXPECT_FALSE(fast_list->execute_next());
+
+  EXPECT_FALSE(is_thenned);
+  EXPECT_FALSE(is_consumed);
+
+  EXPECT_TRUE(slow_list->execute_next());
+
+  EXPECT_TRUE(is_thenned);
+  EXPECT_FALSE(is_consumed);
+
+  EXPECT_TRUE(fast_list->execute_next());
+
+  EXPECT_TRUE(is_thenned);
+  EXPECT_TRUE(is_consumed);
+}

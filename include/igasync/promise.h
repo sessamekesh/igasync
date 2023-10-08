@@ -60,7 +60,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
     std::shared_ptr<ExecutionContext> Scheduler;
   };
 
-  Promise() : is_finished_(false), accept_thens_(true) {}
+  Promise() : is_finished_(false), accept_thens_(true), remaining_thens_(0) {}
 
  public:
   Promise(const Promise<ValT>&) = delete;
@@ -221,6 +221,9 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
           nullptr) -> std::shared_ptr<Promise<RslT>>;
 
  private:
+  void maybe_consume();
+
+ private:
   std::shared_mutex m_result_;
   std::optional<ValT> result_;
 
@@ -232,6 +235,8 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
 
   std::atomic_bool is_finished_;
   std::atomic_bool accept_thens_;
+
+  std::atomic_int remaining_thens_;
 };
 
 /**

@@ -39,17 +39,15 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
       ThenOp v = std::move(then_queue_.front());
       then_queue_.pop();
 
-      v.Scheduler->schedule(
-          Task::Of([fn = std::move(v.Fn), this,
-                    l = this->shared_from_this()]() { fn(*result_); }));
-    }
-
-    if (consume_.has_value()) {
-      consume_->Scheduler->schedule(Task::Of(
-          [fn = std::move(consume_->Fn), this, l = this->shared_from_this()]() {
-            fn(std::move(*result_));
+      v.Scheduler->schedule(Task::Of(
+          [fn = std::move(v.Fn), this, l = this->shared_from_this()]() {
+            fn(*result_);
+            remaining_thens_--;
+            maybe_consume();
           }));
     }
+
+    maybe_consume();
   }
 
   return this->shared_from_this();
@@ -77,6 +75,7 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
   }
 
   // Promsie is still pending - add as a callback
+  remaining_thens_++;
   then_queue_.emplace(ThenOp{std::move(f), std::move(execution_context)});
   return this->shared_from_this();
 }
@@ -101,7 +100,7 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::consume(
   accept_thens_ = false;
 
   std::shared_lock l2(m_result_);
-  if (result_.has_value()) {
+  if (remaining_thens_ == 0 && result_.has_value()) {
     execution_context->schedule(Task::Of(
         [f = std::move(f), this, lifetime = this->shared_from_this()]() {
           f(std::move(*result_));
@@ -220,6 +219,16 @@ auto Promise<ValT>::then_chain_consuming(
       },
       outer_execution_context);
   return tr;
+}
+
+template <class ValT>
+void Promise<ValT>::maybe_consume() {
+  if (remaining_thens_ == 0 && consume_.has_value()) {
+    consume_->Scheduler->schedule(Task::Of(
+        [fn = std::move(consume_->Fn), this, l = this->shared_from_this()]() {
+          fn(std::move(*result_));
+        }));
+  }
 }
 
 }  // namespace igasync
