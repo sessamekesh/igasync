@@ -25,6 +25,14 @@ std::shared_ptr<PromiseCombiner> PromiseCombiner::Create() {
 }
 
 void PromiseCombiner::resolve_promise(uint16_t key) {
+  // I'm not actually sure why this prevents concurrency bugs, but for some
+  //  reason including it got rid of a crash in a test scene that happened
+  //  consistently within 1000 frames.
+  // Dear future Sessamekesh: If you're hunting down another concurrency bug
+  //  and you make it here... go to bed already, you're not finding the issue
+  //  tonight, and tomorrow might be a good day for day drinking.
+  std::lock_guard l(m_entries_);
+
   if (key != 0u) {
     for (size_t i = 0; i < entries_.size(); i++) {
       if (entries_[i].Key == key) {
