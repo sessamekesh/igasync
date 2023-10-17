@@ -18,20 +18,28 @@ class NonCopyable {
  private:
   int val_;
 };
+
+void flush_task_list(std::shared_ptr<TaskList> tl) {
+  while (tl->execute_next())
+    ;
+}
 }  // namespace
 
 TEST(Promise, defaultPromiseIsNotResolved) {
+  auto tl = TaskList::Create();
   auto p = Promise<int>::Create();
 
   bool is_set = false;
 
-  p->on_resolve([&is_set](const auto&) { is_set = true; });
+  p->on_resolve([&is_set](const auto&) { is_set = true; }, tl);
+  ::flush_task_list(tl);
 
   EXPECT_FALSE(is_set);
   EXPECT_FALSE(p->is_finished());
 }
 
 TEST(Promise, immediatePromiseIsResolved) {
+  auto tl = TaskList::Create();
   auto p = Promise<int>::Immediate(42);
 
   bool is_set = false;
@@ -39,10 +47,13 @@ TEST(Promise, immediatePromiseIsResolved) {
 
   EXPECT_TRUE(p->is_finished());
 
-  p->on_resolve([&is_set, &observed_value](const auto& v) {
-    is_set = true;
-    observed_value = v;
-  });
+  p->on_resolve(
+      [&is_set, &observed_value](const auto& v) {
+        is_set = true;
+        observed_value = v;
+      },
+      tl);
+  ::flush_task_list(tl);
 
   EXPECT_TRUE(is_set);
   EXPECT_EQ(observed_value, 42);
@@ -90,22 +101,27 @@ TEST(Promise, tasksScheduledOnResolve) {
 }
 
 TEST(Promise, worksWithNonCopyableTypes) {
+  auto tl = TaskList::Create();
   auto p = Promise<NonCopyable>::Create();
   p->resolve(NonCopyable(5));
 
   int inner_value = 0;
-  p->on_resolve(
-      [&inner_value](const NonCopyable& v) { inner_value = v.val(); });
+  p->on_resolve([&inner_value](const NonCopyable& v) { inner_value = v.val(); },
+                tl);
+  ::flush_task_list(tl);
 
   EXPECT_EQ(inner_value, 5);
 }
 
 TEST(Promise, consumesWithNonCopyableTypes) {
+  auto tl = TaskList::Create();
   auto p = Promise<NonCopyable>::Create();
   p->resolve(NonCopyable(5));
 
   int consumed_value = 0;
-  p->consume([&consumed_value](NonCopyable v) { consumed_value = v.val(); });
+  p->consume([&consumed_value](NonCopyable v) { consumed_value = v.val(); },
+             tl);
+  ::flush_task_list(tl);
 
   EXPECT_EQ(consumed_value, 5);
 }
@@ -156,13 +172,16 @@ TEST(Promise, unsafeSyncMoveWorks) {
 }
 
 TEST(Promise, nonVoidThenChainingWorks) {
+  auto tl = TaskList::Create();
+
   int final_value = 0;
 
   auto p = Promise<NonCopyable>::Create();
-  auto p2 =
-      p->then([](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); });
-  auto p3 =
-      p2->then([&final_value](const NonCopyable& n) { final_value = n.val(); });
+  auto p2 = p->then(
+      [](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); }, tl);
+  auto p3 = p2->then(
+      [&final_value](const NonCopyable& n) { final_value = n.val(); }, tl);
+  ::flush_task_list(tl);
 
   constexpr bool p2TypeIsExpected =
       std::same_as<decltype(p2), std::shared_ptr<Promise<NonCopyable>>>;
@@ -175,54 +194,76 @@ TEST(Promise, nonVoidThenChainingWorks) {
   EXPECT_EQ(final_value, 0);
 
   p->resolve(NonCopyable(1));
+  ::flush_task_list(tl);
 
   EXPECT_EQ(final_value, 2);
 }
 
 TEST(Promise, thenConsumeWorks) {
+  auto tl = TaskList::Create();
+
   int final_value = 0;
   std::invocable<int, bool>;
   auto p = Promise<int>::Create();
-  auto p2 = p->then_consuming([](int a) { return NonCopyable(a); })
-                ->then_consuming(
-                    [](NonCopyable a) { return NonCopyable(a.val() * 2); })
-                ->then_consuming(
-                    [&final_value](NonCopyable a) { final_value = a.val(); });
+  auto p2 =
+      p->then_consuming([](int a) { return NonCopyable(a); }, tl)
+          ->then_consuming(
+              [](NonCopyable a) { return NonCopyable(a.val() * 2); }, tl)
+          ->then_consuming(
+              [&final_value](NonCopyable a) { final_value = a.val(); }, tl);
 
   p->resolve(2);
+  ::flush_task_list(tl);
+
   EXPECT_EQ(final_value, 4);
 }
 
 TEST(Promise, thenChainWorks) {
+  auto tl = TaskList::Create();
+
   int final_value = 0;
 
   auto p = Promise<int>::Create();
   auto pout =
-      p->then_consuming([](int val) { return NonCopyable(val); })
-          ->then_chain([](const NonCopyable& val) {
-            return Promise<NonCopyable>::Immediate(NonCopyable(val.val() * 2));
-          })
-          ->then([&final_value](const auto& val) { final_value = val.val(); });
+      p->then_consuming([](int val) { return NonCopyable(val); }, tl)
+          ->then_chain(
+              [](const NonCopyable& val) {
+                return Promise<NonCopyable>::Immediate(
+                    NonCopyable(val.val() * 2));
+              },
+              tl)
+          ->then([&final_value](const auto& val) { final_value = val.val(); },
+                 tl);
 
   p->resolve(2);
+  ::flush_task_list(tl);
+
   EXPECT_EQ(final_value, 4);
 }
 
 TEST(Promise, thenChainConsumingWorks) {
+  auto tl = TaskList::Create();
+
   int final_value = 0;
 
   auto p = Promise<int>::Create();
   auto pout =
-      p->then_chain_consuming([](int val) {
-         return Promise<NonCopyable>::Immediate(NonCopyable(val));
-       })
-          ->then_chain_consuming([](NonCopyable v) {
-            return Promise<NonCopyable>::Immediate(NonCopyable(v.val() * 2));
-          })
+      p->then_chain_consuming(
+           [](int val) {
+             return Promise<NonCopyable>::Immediate(NonCopyable(val));
+           },
+           tl)
+          ->then_chain_consuming(
+              [](NonCopyable v) {
+                return Promise<NonCopyable>::Immediate(
+                    NonCopyable(v.val() * 2));
+              },
+              tl)
           ->consume(
-              [&final_value](NonCopyable val) { final_value = val.val(); });
+              [&final_value](NonCopyable val) { final_value = val.val(); }, tl);
 
   p->resolve(2);
+  ::flush_task_list(tl);
   EXPECT_EQ(final_value, 4);
 }
 

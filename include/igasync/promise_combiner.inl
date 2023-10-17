@@ -112,12 +112,14 @@ PromiseCombiner::PromiseKey<T, true> [[nodiscard]] PromiseCombiner::
       [p2, execution_context](T val) { p2->resolve(std::move(val)); },
       execution_context);
 
-  p2->on_resolve([key, l = weak_from_this()](const auto&) {
-    auto t = l.lock();
-    if (!t) return;
+  p2->on_resolve(
+      [key, l = weak_from_this()](const auto&) {
+        auto t = l.lock();
+        if (!t) return;
 
-    t->resolve_promise(key.key_);
-  });
+        t->resolve_promise(key.key_);
+      },
+      execution_context);
 
   return key;
 }

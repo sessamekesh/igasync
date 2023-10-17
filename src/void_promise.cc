@@ -13,6 +13,8 @@ std::shared_ptr<Promise<void>> Promise<void>::Immediate() {
 }
 
 std::shared_ptr<Promise<void>> Promise<void>::resolve() {
+  std::scoped_lock l(m_then_queue_);
+
   if (is_finished_) {
     // TODO (sessamekesh): Handle this error case (global callback)
     return nullptr;
@@ -21,7 +23,6 @@ std::shared_ptr<Promise<void>> Promise<void>::resolve() {
   is_finished_ = true;
 
   {
-    std::scoped_lock l(m_then_queue_);
     while (!then_queue_.empty()) {
       ThenOp v = std::move(then_queue_.front());
       then_queue_.pop();

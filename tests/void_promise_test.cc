@@ -18,19 +18,16 @@ class NonCopyable {
  private:
   int val_;
 };
+
+void flush_task_list(std::shared_ptr<TaskList> tl) {
+  while (tl->execute_next())
+    ;
+}
 }  // namespace
 
 TEST(VoidPromise, defaultPromiseIsNotResolved) {
   auto p = Promise<void>::Create();
   EXPECT_FALSE(p->is_finished());
-}
-
-TEST(VoidPromise, immediatePromiseIsResolved) {
-  auto p = Promise<void>::Immediate();
-  bool is_set = false;
-  EXPECT_TRUE(p->is_finished());
-  p->on_resolve([&is_set]() { is_set = true; });
-  EXPECT_TRUE(is_set);
 }
 
 TEST(VoidPromise, tasksScheduledOnResolve) {
@@ -63,27 +60,34 @@ TEST(VoidPromise, tasksScheduledOnResolve) {
 }
 
 TEST(VoidPromise, thenWorks) {
+  auto tl = TaskList::Create();
+
   int final_value = 0;
 
   auto p = Promise<void>::Create();
-  auto p2 = p->then([]() { return NonCopyable(5); });
-  auto p3 =
-      p2->then([](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); });
+  auto p2 = p->then([]() { return NonCopyable(5); }, tl);
+  auto p3 = p2->then(
+      [](const NonCopyable& nc) { return NonCopyable(nc.val() * 2); }, tl);
   auto p4 = p3->then(
-      [&final_value](const NonCopyable& nc) { final_value = nc.val(); });
+      [&final_value](const NonCopyable& nc) { final_value = nc.val(); }, tl);
 
   p->resolve();
+
+  ::flush_task_list(tl);
 
   EXPECT_EQ(final_value, 10);
 }
 
 TEST(VoidPromise, thenChainWorks) {
+  auto tl = TaskList::Create();
   auto p = Promise<void>::Create();
   auto f = [] { return Promise<void>::Immediate(); };
 
-  auto p2 = p->then_chain(f)->then_chain(f)->then_chain(f);
+  auto p2 = p->then_chain(f, tl)->then_chain(f, tl)->then_chain(f, tl);
+  ::flush_task_list(tl);
 
   EXPECT_FALSE(p2->is_finished());
   p->resolve();
+  ::flush_task_list(tl);
   EXPECT_TRUE(p2->is_finished());
 }

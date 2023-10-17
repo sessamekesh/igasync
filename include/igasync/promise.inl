@@ -18,37 +18,31 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::Immediate(ValT val) {
 
 template <class ValT>
 std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
-  {
-    std::scoped_lock l(m_result_);
-
-    if (result_.has_value()) {
-      // TODO (sessamekesh): Handle this error case (global callback on
-      // double-resolve registered against igasync singleton?)
-      return nullptr;
-    }
-
-    result_ = std::move(val);
-    is_finished_ = true;
+  std::scoped_lock l(m_result_);
+  if (result_.has_value()) {
+    // TODO (sessamekesh): Handle this error case (global callback on
+    // double-resolve registered against igasync singleton?)
+    return nullptr;
   }
+
+  result_ = std::move(val);
+  is_finished_ = true;
 
   // Flush queue of pending operations
-  {
-    std::scoped_lock l(m_then_queue_);
-    std::scoped_lock l2(m_consume_);
-    while (!then_queue_.empty()) {
-      ThenOp v = std::move(then_queue_.front());
-      then_queue_.pop();
+  while (!then_queue_.empty()) {
+    ThenOp v = std::move(then_queue_.front());
+    then_queue_.pop();
 
-      v.Scheduler->schedule(Task::Of(
-          [fn = std::move(v.Fn), this, l = this->shared_from_this()]() {
-            fn(*result_);
-            remaining_thens_--;
-            maybe_consume();
-          }));
-    }
-
-    maybe_consume();
+    v.Scheduler->schedule(
+        Task::Of([fn = std::move(v.Fn), this, l = this->shared_from_this()]() {
+          fn(*result_);
+          std::scoped_lock l(this->m_result_);
+          remaining_thens_--;
+          maybe_consume();
+        }));
   }
+
+  maybe_consume();
 
   return this->shared_from_this();
 }
@@ -58,14 +52,12 @@ template <class F>
   requires(NonVoidPromiseThenCb<ValT, F>)
 std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
     F&& f, std::shared_ptr<ExecutionContext> execution_context) {
-  std::lock_guard l(m_then_queue_);
-  std::lock_guard lcons(m_consume_);
+  std::scoped_lock l(m_result_);
   if (!accept_thens_) {
     // TODO (sessamekesh): Invoke a global callback here
     return nullptr;
   }
 
-  std::shared_lock l2(m_result_);
   if (result_.has_value()) {
     execution_context->schedule(
         Task::Of([fn = std::move(f), this, l = this->shared_from_this()]() {
@@ -91,7 +83,7 @@ template <typename F>
   requires(NonVoidPromiseConsumeCb<ValT, F>)
 std::shared_ptr<Promise<ValT>> Promise<ValT>::consume(
     F&& f, std::shared_ptr<ExecutionContext> execution_context) {
-  std::lock_guard l(m_then_queue_);
+  std::scoped_lock l(m_result_);
   if (!accept_thens_) {
     // TODO (sessamekesh): Error handling here, this promise is already consume
     return nullptr;
@@ -99,7 +91,6 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::consume(
 
   accept_thens_ = false;
 
-  std::shared_lock l2(m_result_);
   if (remaining_thens_ == 0 && result_.has_value()) {
     execution_context->schedule(Task::Of(
         [f = std::move(f), this, lifetime = this->shared_from_this()]() {
