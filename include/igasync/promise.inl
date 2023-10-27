@@ -40,7 +40,7 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
       then_queue_.pop();
 
       v.Scheduler->schedule(Task::Of(
-          [fn = std::move(v.Fn), this, l = this->shared_from_this()]() {
+          [fn = std::move(v.Fn), this, lifetime = this->shared_from_this()]() {
             fn(*result_);
             remaining_thens_--;
             maybe_consume();
@@ -68,9 +68,8 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
   std::shared_lock l2(m_result_);
   if (result_.has_value()) {
     execution_context->schedule(
-        Task::Of([fn = std::move(f), this, l = this->shared_from_this()]() {
-          fn(*result_);
-        }));
+        Task::Of([fn = std::move(f), this,
+                  lifetime = this->shared_from_this()]() { fn(*result_); }));
     return this->shared_from_this();
   }
 
