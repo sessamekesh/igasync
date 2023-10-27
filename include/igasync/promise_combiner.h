@@ -73,22 +73,19 @@ class PromiseCombiner : public std::enable_shared_from_this<PromiseCombiner> {
   static std::shared_ptr<PromiseCombiner> Create();
 
   void add(std::shared_ptr<Promise<void>> promise,
-           std::shared_ptr<ExecutionContext> execution_context =
-               gDefaultExecutionContext);
+           std::shared_ptr<ExecutionContext> execution_context);
 
   template <typename T>
     requires(!IsVoid<T>)
   [[nodiscard]] PromiseKey<T, false> add(
       std::shared_ptr<Promise<T>> promise,
-      std::shared_ptr<ExecutionContext> execution_context =
-          gDefaultExecutionContext);
+      std::shared_ptr<ExecutionContext> execution_context);
 
   template <typename T>
     requires(!IsVoid<T>)
   [[nodiscard]] PromiseKey<T, true> add_consuming(
       std::shared_ptr<Promise<T>> promise,
-      std::shared_ptr<ExecutionContext> execution_context =
-          gDefaultExecutionContext);
+      std::shared_ptr<ExecutionContext> execution_context);
 
   /**
    * @brief Call once all promises have been added to schedule a callback once
@@ -105,8 +102,7 @@ class PromiseCombiner : public std::enable_shared_from_this<PromiseCombiner> {
             typename RslT = std::invoke_result_t<F, PromiseCombiner::Result>>
     requires(CanApplyFunctor<F, PromiseCombiner::Result>)
   std::shared_ptr<Promise<RslT>> combine(
-      F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                 gDefaultExecutionContext);
+      F&& f, std::shared_ptr<ExecutionContext> execution_context);
 
   /**
    * @brief Chaining overload of PromiseCombiner::combine method.
@@ -121,9 +117,7 @@ class PromiseCombiner : public std::enable_shared_from_this<PromiseCombiner> {
             typename RslT = std::invoke_result_t<F>::element_type::value_type>
     requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F>)
   std::shared_ptr<Promise<RslT>> combine_chaining(
-      F&& f,
-      std::shared_ptr<ExecutionContext> outer_execution_context =
-          gDefaultExecutionContext,
+      F&& f, std::shared_ptr<ExecutionContext> outer_execution_context,
       std::shared_ptr<ExecutionContext> inner_execution_context_override =
           nullptr);
 

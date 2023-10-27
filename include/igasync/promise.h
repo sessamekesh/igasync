@@ -3,7 +3,6 @@
 
 #include <igasync/concepts.h>
 #include <igasync/execution_context.h>
-#include <igasync/inline_execution_context.h>
 
 #include <functional>
 #include <memory>
@@ -12,13 +11,6 @@
 #include <shared_mutex>
 
 namespace igasync {
-
-/**
- * @brief Default execution context for promise resolution (an
- *        InlineExecutionContext instance)
- */
-inline std::shared_ptr<ExecutionContext> gDefaultExecutionContext =
-    std::make_shared<InlineExecutionContext>();
 
 /**
  * @brief Promise implementation for igasync library
@@ -101,8 +93,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   template <typename F>
     requires(NonVoidPromiseThenCb<ValT, F>)
   std::shared_ptr<Promise<ValT>> on_resolve(
-      F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                 gDefaultExecutionContext);
+      F&& f, std::shared_ptr<ExecutionContext> execution_context);
 
   /**
    * @brief Schedule a callback to consume the final value when this promise
@@ -117,8 +108,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   template <typename F>
     requires(NonVoidPromiseConsumeCb<ValT, F>)
   std::shared_ptr<Promise<ValT>> consume(
-      F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                 gDefaultExecutionContext);
+      F&& f, std::shared_ptr<ExecutionContext> execution_context);
 
   /**
    * @return True if this promise is finished, false otherwise
@@ -150,14 +140,13 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
    * @tparam RslT
    * @param f
    * @param execution_context Scheduling mechanism to invoke the functor
-   * against, defaults to gDefaultExecutionContext
+   *                          against.
    * @return A new promise
    */
   template <typename F,
             typename RslT = typename std::invoke_result_t<F, const ValT&>>
     requires(CanApplyFunctor<F, const ValT&>)
-  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                       gDefaultExecutionContext)
+  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context)
       -> std::shared_ptr<Promise<RslT>>;
 
   /**
@@ -172,8 +161,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
   template <typename F, typename RslT = typename std::invoke_result_t<F, ValT>>
     requires(CanApplyFunctor<F, ValT>)
   auto then_consuming(F&& f,
-                      std::shared_ptr<ExecutionContext> execution_context =
-                          gDefaultExecutionContext)
+                      std::shared_ptr<ExecutionContext> execution_context)
       -> std::shared_ptr<Promise<RslT>>;
 
   /**
@@ -194,8 +182,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
     requires(
         HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, const ValT&>)
   auto then_chain(F&& f,
-                  std::shared_ptr<ExecutionContext> outer_execution_context =
-                      gDefaultExecutionContext,
+                  std::shared_ptr<ExecutionContext> outer_execution_context,
                   std::shared_ptr<ExecutionContext>
                       inner_execution_context_override = nullptr)
       -> std::shared_ptr<Promise<RslT>>;
@@ -214,9 +201,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
                             F, ValT>::element_type::value_type>
     requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F, ValT>)
   auto then_chain_consuming(
-      F&& f,
-      std::shared_ptr<ExecutionContext> outer_execution_context =
-          gDefaultExecutionContext,
+      F&& f, std::shared_ptr<ExecutionContext> outer_execution_context,
       std::shared_ptr<ExecutionContext> inner_execution_context_override =
           nullptr) -> std::shared_ptr<Promise<RslT>>;
 
@@ -226,11 +211,7 @@ class Promise : public std::enable_shared_from_this<Promise<ValT>> {
  private:
   std::shared_mutex m_result_;
   std::optional<ValT> result_;
-
-  std::mutex m_then_queue_;
   std::queue<ThenOp> then_queue_;
-
-  std::mutex m_consume_;
   std::optional<ConsumeOp> consume_;
 
   std::atomic_bool is_finished_;
@@ -297,8 +278,7 @@ class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
   template <typename F>
     requires(VoidPromiseThenCb<F>)
   std::shared_ptr<Promise<void>> on_resolve(
-      F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                 gDefaultExecutionContext);
+      F&& f, std::shared_ptr<ExecutionContext> execution_context);
 
   /**
    * @brief Schedule a callback to be invoked when this promise resolves, and
@@ -311,8 +291,7 @@ class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
    */
   template <typename F, typename RslT = typename std::invoke_result_t<F>>
     requires(CanApplyFunctor<F>)
-  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context =
-                       gDefaultExecutionContext)
+  auto then(F&& f, std::shared_ptr<ExecutionContext> execution_context)
       -> std::shared_ptr<Promise<RslT>>;
 
   /**
@@ -331,8 +310,7 @@ class Promise<void> : public std::enable_shared_from_this<Promise<void>> {
                             F>::element_type::value_type>
     requires(HasAppropriateFunctor<std::shared_ptr<Promise<RslT>>, F>)
   auto then_chain(F&& f,
-                  std::shared_ptr<ExecutionContext> outer_execution_context =
-                      gDefaultExecutionContext,
+                  std::shared_ptr<ExecutionContext> outer_execution_context,
                   std::shared_ptr<ExecutionContext>
                       inner_execution_context_override = nullptr)
       -> std::shared_ptr<Promise<RslT>>;

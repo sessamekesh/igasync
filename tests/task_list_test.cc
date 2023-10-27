@@ -167,7 +167,8 @@ TEST(TaskList, runReturnsNonVoidPromise_noParams) {
 
   EXPECT_TRUE(rsl->is_finished());
 
-  rsl->on_resolve([&val](const int& v) { val = v; });
+  rsl->on_resolve([&val](const int& v) { val = v; }, task_list);
+  ::flush_task_list(task_list.get());
   EXPECT_EQ(val, 42);
 }
 
@@ -187,7 +188,8 @@ TEST(TaskList, runReturnsNonVoidPromise_withParams) {
 
   EXPECT_TRUE(rsl->is_finished());
 
-  rsl->on_resolve([&val](const int& v) { val = v; });
+  rsl->on_resolve([&val](const int& v) { val = v; }, task_list);
+  ::flush_task_list(task_list.get());
   EXPECT_EQ(val, 50);
 }
 
@@ -208,7 +210,8 @@ TEST(TaskList, runReturnsNonCopyable_noParams) {
 
   EXPECT_TRUE(rsl->is_finished());
 
-  rsl->on_resolve([&val](const auto& v) { val = v.val(); });
+  rsl->on_resolve([&val](const auto& v) { val = v.val(); }, task_list);
+  ::flush_task_list(task_list.get());
   EXPECT_EQ(val, 42);
 }
 
@@ -229,6 +232,7 @@ TEST(TaskList, runReturnsNonCopyable_withParams) {
 
   EXPECT_TRUE(rsl->is_finished());
 
-  rsl->on_resolve([&val](const auto& v) { val = v.val(); });
+  rsl->on_resolve([&val](const auto& v) { val = v.val(); }, task_list);
+  ::flush_task_list(task_list.get());
   EXPECT_EQ(val, 50);
 }
