@@ -67,7 +67,7 @@ T PromiseCombiner::Result::move(
 
 template <typename T>
   requires(!IsVoid<T>)
-[[nodiscard]] PromiseCombiner::PromiseKey<T, false> PromiseCombiner::add(
+PromiseCombiner::PromiseKey<T, false> [[nodiscard]] PromiseCombiner::add(
     std::shared_ptr<Promise<T>> promise,
     std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_entries_);
