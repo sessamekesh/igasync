@@ -33,8 +33,8 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::resolve(ValT val) {
     ThenOp v = std::move(then_queue_.front());
     then_queue_.pop();
 
-    v.Scheduler->schedule(
-        Task::Of([fn = std::move(v.Fn), this, l = this->shared_from_this()]() {
+    v.Scheduler->schedule(Task::Of(
+        [fn = std::move(v.Fn), this, lifetime = this->shared_from_this()]() {
           fn(*result_);
           std::scoped_lock l(this->m_result_);
           remaining_thens_--;
@@ -60,9 +60,8 @@ std::shared_ptr<Promise<ValT>> Promise<ValT>::on_resolve(
 
   if (result_.has_value()) {
     execution_context->schedule(
-        Task::Of([fn = std::move(f), this, l = this->shared_from_this()]() {
-          fn(*result_);
-        }));
+        Task::Of([fn = std::move(f), this,
+                  lifetime = this->shared_from_this()]() { fn(*result_); }));
     return this->shared_from_this();
   }
 
@@ -216,9 +215,8 @@ template <class ValT>
 void Promise<ValT>::maybe_consume() {
   if (remaining_thens_ == 0 && consume_.has_value()) {
     consume_->Scheduler->schedule(Task::Of(
-        [fn = std::move(consume_->Fn), this, l = this->shared_from_this()]() {
-          fn(std::move(*result_));
-        }));
+        [fn = std::move(consume_->Fn), this,
+         lifetime = this->shared_from_this()]() { fn(std::move(*result_)); }));
   }
 }
 

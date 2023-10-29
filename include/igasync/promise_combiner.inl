@@ -67,7 +67,7 @@ T PromiseCombiner::Result::move(
 
 template <typename T>
   requires(!IsVoid<T>)
-[[nodiscard]] PromiseCombiner::PromiseKey<T, false> PromiseCombiner::add(
+PromiseCombiner::PromiseKey<T, false> PromiseCombiner::add(
     std::shared_ptr<Promise<T>> promise,
     std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_entries_);
@@ -94,9 +94,9 @@ template <typename T>
 
 template <typename T>
   requires(!IsVoid<T>)
-PromiseCombiner::PromiseKey<T, true> [[nodiscard]] PromiseCombiner::
-    add_consuming(std::shared_ptr<Promise<T>> promise,
-                  std::shared_ptr<ExecutionContext> execution_context) {
+PromiseCombiner::PromiseKey<T, true> PromiseCombiner::add_consuming(
+    std::shared_ptr<Promise<T>> promise,
+    std::shared_ptr<ExecutionContext> execution_context) {
   std::lock_guard l(m_entries_);
   if (is_finished_) {
     // TODO (sessamekesh): Invoke callback for 'finish already registered'
