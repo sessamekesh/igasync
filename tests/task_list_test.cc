@@ -236,3 +236,24 @@ TEST(TaskList, runReturnsNonCopyable_withParams) {
   ::flush_task_list(task_list.get());
   EXPECT_EQ(val, 50);
 }
+
+TEST(TaskList, correctlyProfilesTasks) {
+  auto test_start = std::chrono::high_resolution_clock::now();
+  auto task_list = TaskList::Create();
+  TaskProfile task_profile;
+  auto get_profile_cb = [&task_profile](TaskProfile profile) {
+    task_profile = profile;
+  };
+
+  bool was_run = false;
+
+  task_list->schedule(
+      Task::WithProfile(get_profile_cb, [&was_run] { was_run = true; }));
+
+  EXPECT_TRUE(task_list->execute_next());
+  EXPECT_TRUE(task_profile.Created > test_start);
+  EXPECT_TRUE(task_profile.Scheduled >= task_profile.Created);
+  EXPECT_TRUE(task_profile.Started >= task_profile.Scheduled);
+  EXPECT_TRUE(task_profile.Finished > task_profile.Started);
+  EXPECT_EQ(task_profile.ExecutorThreadId, std::this_thread::get_id());
+}

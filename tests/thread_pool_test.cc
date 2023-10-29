@@ -19,6 +19,20 @@ std::shared_ptr<ThreadPool> CreateTestThreadPool() {
 
   return ThreadPool::Create(desc);
 }
+
+void sleep_until_finished(
+    std::shared_ptr<Promise<void>> promise,
+    std::chrono::high_resolution_clock::time_point max_wait) {
+  while (max_wait > std::chrono::high_resolution_clock::now() &&
+         !promise->is_finished()) {
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(7);
+#else
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+#endif
+  }
+}
+
 }  // namespace
 
 TEST(ThreadPool, consumesTasks) {
@@ -135,4 +149,62 @@ TEST(ThreadPool, picksUpExistingTasks) {
   }
 
   FAIL();
+}
+
+TEST(ThreadPool, returnsThreadIds) {
+  ThreadPool::Desc tpd{};
+  tpd.AdditionalThreads = 4;
+  tpd.UseHardwareConcurrency = false;
+
+  auto thread_pool = ThreadPool::Create(tpd);
+
+  auto thread_ids = thread_pool->thread_ids();
+
+  EXPECT_EQ(thread_ids.size(), 4);
+  for (int i = 0; i < thread_ids.size(); i++) {
+    EXPECT_NE(thread_ids[i], std::this_thread::get_id());
+
+    for (int j = i + 1; j < thread_ids.size(); j++) {
+      EXPECT_NE(thread_ids[i], thread_ids[j]);
+    }
+  }
+}
+
+TEST(ThreadPool, taskProfilingHappensOnAThread) {
+  auto test_start = std::chrono::high_resolution_clock::now();
+
+  ThreadPool::Desc tpd{};
+  tpd.AdditionalThreads = 4;
+  tpd.UseHardwareConcurrency = false;
+  auto thread_pool = ThreadPool::Create(tpd);
+
+  auto task_list = TaskList::Create();
+  thread_pool->add_task_list(task_list);
+
+  auto promise = Promise<void>::Create();
+  auto task_fn = [promise]() { promise->resolve(); };
+
+  TaskProfile profile;
+  auto set_profile = [&profile](TaskProfile p) { profile = p; };
+
+  task_list->schedule(Task::WithProfile(set_profile, task_fn));
+
+  ::sleep_until_finished(promise, std::chrono::high_resolution_clock::now() +
+                                      std::chrono::seconds(1));
+
+  EXPECT_TRUE(profile.Created > test_start);
+  EXPECT_TRUE(profile.Scheduled >= profile.Created);
+  EXPECT_TRUE(profile.Started >= profile.Scheduled);
+  EXPECT_TRUE(profile.Finished > profile.Started);
+  EXPECT_NE(profile.ExecutorThreadId, std::this_thread::get_id());
+
+  int matching_thread_ct = 0;
+  auto thread_ids = thread_pool->thread_ids();
+  for (int i = 0; i < thread_ids.size(); i++) {
+    if (profile.ExecutorThreadId == thread_ids[i]) {
+      matching_thread_ct++;
+    }
+  }
+
+  EXPECT_EQ(matching_thread_ct, 1);
 }

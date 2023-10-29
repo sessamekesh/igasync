@@ -11,6 +11,7 @@ std::shared_ptr<TaskList> TaskList::Create(TaskList::Desc desc) {
 }
 
 void TaskList::schedule(std::unique_ptr<Task> task) {
+  task->mark_scheduled();
   tasks_.enqueue(std::move(task));
 
   std::shared_lock l(m_enqueue_listeners_);

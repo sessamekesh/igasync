@@ -45,6 +45,8 @@ class ThreadPool : public std::enable_shared_from_this<ThreadPool>,
   void remove_task_list(std::shared_ptr<TaskList> task_list);
   void clear_all_task_lists();
 
+  std::vector<std::thread::id> thread_ids() const;
+
   // ITaskScheduledListener
   virtual void on_task_added() override;
 

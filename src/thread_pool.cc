@@ -107,4 +107,14 @@ void ThreadPool::clear_all_task_lists() {
   cv_has_task_.notify_all();
 }
 
+std::vector<std::thread::id> ThreadPool::thread_ids() const {
+  std::vector<std::thread::id> ids;
+
+  for (int i = 0; i < threads_.size(); i++) {
+    ids.push_back(threads_[i].get_id());
+  }
+
+  return ids;
+}
+
 void ThreadPool::on_task_added() { cv_has_task_.notify_one(); }
