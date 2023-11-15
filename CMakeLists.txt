@@ -17,6 +17,7 @@ project (
 #
 set(IGASYNC_BUILD_TESTS "ON" CACHE BOOL "Build unit tests")
 set(IGASYNC_BUILD_EXAMPLES "ON" CACHE BOOL "Build examples")
+set(IGASYNC_ENABLE_WASM_THREADS "ON" CACHE BOOL "Include threading support in WASM builds")
 
 #
 # Testing support
@@ -98,13 +99,12 @@ if (IGASYNC_BUILD_TESTS)
     gtest_discover_tests(igasync_test)
   endif ()
 
-  if (EMSCRIPTEN)
+  if (EMSCRIPTEN AND IGASYNC_ENABLE_WASM_THREADS)
     target_compile_options(igasync PUBLIC "-pthread")
 	target_compile_options(igasync_test PUBLIC "-pthread")
 	target_compile_options(gtest PUBLIC "-pthread")
-	target_link_options(gtest PUBLIC "SHELL: -s ENVIRONMENT=web,worker -sWASM_WORKERS -sUSE_PTHREADS -pthread -s PTHREAD_POOL_SIZE=2")
-	target_link_options(igasync PUBLIC "SHELL: -s ENVIRONMENT=web,worker -sWASM_WORKERS -sUSE_PTHREADS -pthread -s PTHREAD_POOL_SIZE=2")
-	target_link_options(igasync_test PUBLIC "SHELL: -sASYNCIFY -s ENVIRONMENT=web,worker -sUSE_PTHREADS -sWASM_WORKERS -pthread -s PTHREAD_POOL_SIZE=2")
+
+	target_link_options(igasync_test PUBLIC "SHELL:-s USE_PTHREADS=1 -pthread -sPTHREAD_POOL_SIZE=\"Math.max(((navigator&&navigator.hardwareConcurrency)||4),6))\"")
     set_target_properties(igasync_test PROPERTIES SUFFIX ".html")
   endif ()
 endif ()
